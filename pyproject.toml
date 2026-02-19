@@ -9,5 +9,7 @@ dependencies = [
     "datasets[audio]>=4.5.0",
     "dotenv>=0.9.9",
     "faster-whisper>=1.2.1",
+    "openai>=2.21.0",
     "transformers>=5.2.0",
+    "yt-dlp>=2026.2.4",
 ]
