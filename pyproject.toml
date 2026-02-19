@@ -1,0 +1,13 @@
+[project]
+name = "transciber"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "accelerate>=1.12.0",
+    "datasets[audio]>=4.5.0",
+    "dotenv>=0.9.9",
+    "faster-whisper>=1.2.1",
+    "transformers>=5.2.0",
+]
