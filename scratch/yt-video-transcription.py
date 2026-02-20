@@ -39,5 +39,5 @@ def transcribe_youtube(url):
     return transcription.text
 
 
-video_url = "https://www.youtube.com/shorts/psoFK7p1x4s"
+video_url = "https://www.youtube.com/shorts/hC5uXJLDEts"
 print(transcribe_youtube(video_url))
