@@ -6,6 +6,48 @@ function formatTime(seconds) {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
+function CopyButton({ getText }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(getText());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = getText();
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      title="Copy transcription to clipboard"
+      style={{
+        padding: '5px 12px',
+        background: copied ? 'rgba(0,184,148,0.2)' : 'var(--bg-input)',
+        border: `1px solid ${copied ? 'var(--success)' : 'var(--border)'}`,
+        borderRadius: 8,
+        color: copied ? 'var(--success)' : 'var(--text-secondary)',
+        fontSize: '0.8rem',
+        cursor: 'pointer',
+        transition: 'all 0.2s',
+        fontWeight: 500,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {copied ? 'Copied!' : 'Copy Text'}
+    </button>
+  );
+}
+
 export default function TranscriptionPanel({ transcription, segments, currentTime, onSeekTo }) {
   const [viewMode, setViewMode] = useState('paragraph'); // 'paragraph' | 'timestamps'
   const [activeIdx, setActiveIdx] = useState(-1);
@@ -19,7 +61,6 @@ export default function TranscriptionPanel({ transcription, segments, currentTim
     );
     if (idx !== -1 && idx !== activeIdx) {
       setActiveIdx(idx);
-      // Auto-scroll to active segment in timestamp view
       if (viewMode === 'timestamps') {
         const el = panelRef.current?.querySelector(`[data-seg="${idx}"]`);
         if (el) {
@@ -28,6 +69,14 @@ export default function TranscriptionPanel({ transcription, segments, currentTim
       }
     }
   }, [currentTime, segments, activeIdx, viewMode]);
+
+  // Build copy text based on current view mode
+  const getCopyText = () => {
+    if (viewMode === 'timestamps' && segments?.length) {
+      return segments.map(seg => `[${formatTime(seg.start)}] ${seg.text}`).join('\n');
+    }
+    return transcription || '';
+  };
 
   if (!transcription) {
     return (
@@ -42,53 +91,59 @@ export default function TranscriptionPanel({ transcription, segments, currentTim
 
   return (
     <div className="transcription-panel" ref={panelRef}>
-      {/* View mode toggle */}
-      {hasSegments && (
-        <div style={{
-          display: 'flex',
-          gap: 16,
-          padding: '8px 0 12px',
-          borderBottom: '1px solid var(--border)',
-          marginBottom: 12,
-        }}>
-          <label style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            cursor: 'pointer',
-            fontSize: '0.85rem',
-            color: viewMode === 'paragraph' ? 'var(--accent)' : 'var(--text-secondary)',
-          }}>
-            <input
-              type="radio"
-              name="viewMode"
-              value="paragraph"
-              checked={viewMode === 'paragraph'}
-              onChange={() => setViewMode('paragraph')}
-              style={{ accentColor: 'var(--accent)' }}
-            />
-            Paragraph
-          </label>
-          <label style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            cursor: 'pointer',
-            fontSize: '0.85rem',
-            color: viewMode === 'timestamps' ? 'var(--accent)' : 'var(--text-secondary)',
-          }}>
-            <input
-              type="radio"
-              name="viewMode"
-              value="timestamps"
-              checked={viewMode === 'timestamps'}
-              onChange={() => setViewMode('timestamps')}
-              style={{ accentColor: 'var(--accent)' }}
-            />
-            Timestamps
-          </label>
+      {/* Toolbar: view toggle + copy */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 16,
+        padding: '8px 0 12px',
+        borderBottom: '1px solid var(--border)',
+        marginBottom: 12,
+      }}>
+        {hasSegments && (
+          <>
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              cursor: 'pointer',
+              fontSize: '0.85rem',
+              color: viewMode === 'paragraph' ? 'var(--accent)' : 'var(--text-secondary)',
+            }}>
+              <input
+                type="radio"
+                name="viewMode"
+                value="paragraph"
+                checked={viewMode === 'paragraph'}
+                onChange={() => setViewMode('paragraph')}
+                style={{ accentColor: 'var(--accent)' }}
+              />
+              Paragraph
+            </label>
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              cursor: 'pointer',
+              fontSize: '0.85rem',
+              color: viewMode === 'timestamps' ? 'var(--accent)' : 'var(--text-secondary)',
+            }}>
+              <input
+                type="radio"
+                name="viewMode"
+                value="timestamps"
+                checked={viewMode === 'timestamps'}
+                onChange={() => setViewMode('timestamps')}
+                style={{ accentColor: 'var(--accent)' }}
+              />
+              Timestamps
+            </label>
+          </>
+        )}
+        <div style={{ marginLeft: 'auto' }}>
+          <CopyButton getText={getCopyText} />
         </div>
-      )}
+      </div>
 
       {/* Paragraph view (default) */}
       {(!hasSegments || viewMode === 'paragraph') && (

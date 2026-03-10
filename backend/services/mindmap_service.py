@@ -1,139 +1,179 @@
-"""Generate Mermaid mind-map from transcription text."""
+"""Generate structured mind-map data from transcription using GPT-4o-mini."""
+import json
 import re
 import logging
 from collections import Counter
+from typing import Callable, Awaitable
+
+import httpx
+
+from config import OPENAI_API_KEY
 
 logger = logging.getLogger(__name__)
 
-# Common Hindi stop words to filter out
-HINDI_STOP_WORDS = {
-    "है", "हैं", "था", "थे", "थी", "को", "का", "के", "की", "में", "पर", "से",
-    "ने", "और", "या", "भी", "तो", "ही", "एक", "यह", "वह", "इस", "उस", "जो",
-    "कि", "हम", "तुम", "वो", "मैं", "आप", "कर", "हो", "जा", "ला", "दे",
-    "ले", "कोई", "कुछ", "सब", "बहुत", "अभी", "बस", "तक", "साथ", "लिए",
-    "अपने", "अपनी", "अपना", "होता", "करता", "करते", "होते", "करना", "होना",
-    "रहा", "रही", "रहे", "गया", "गई", "गए", "वाला", "वाली", "वाले",
-    "the", "is", "are", "was", "were", "a", "an", "and", "or", "but", "in",
-    "on", "at", "to", "for", "of", "with", "by", "from", "this", "that",
-    "it", "he", "she", "we", "they", "you", "i", "me", "my", "your",
-    "his", "her", "its", "our", "their", "be", "have", "has", "had", "do",
-    "does", "did", "not", "so", "if", "as", "can", "will", "would", "about",
+OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
+TIMEOUT = httpx.Timeout(timeout=120.0, connect=30.0)
+
+MINDMAP_SYSTEM_PROMPT = """\
+You are a content analyst. Given a video transcription, extract a structured \
+mind-map of the content. Return a JSON object with this exact structure:
+
+{
+  "title": "Main topic of the video",
+  "themes": [
+    {
+      "label": "Theme/topic name",
+      "points": [
+        {
+          "text": "Key point or argument",
+          "detail": "Brief supporting detail or example (1 sentence, optional)"
+        }
+      ]
+    }
+  ]
 }
 
-ENGLISH_STOP_WORDS = {
-    "the", "is", "are", "was", "were", "a", "an", "and", "or", "but", "in",
-    "on", "at", "to", "for", "of", "with", "by", "from", "this", "that",
-    "it", "he", "she", "we", "they", "you", "i", "me", "my", "your",
-}
+Rules:
+1. Extract 3-6 main themes that capture the actual topics discussed.
+2. Each theme should have 2-5 key points.
+3. Theme labels should be concise (2-5 words).
+4. Key points should be clear, factual statements from the content.
+5. Details are optional — include only when there's a specific example, \
+   statistic, or quote worth noting.
+6. Keep the original language of the content. If the video is in Hindi, \
+   write themes and points in Hindi. If mixed Hindi-English (Hinglish), \
+   keep that natural mix.
+7. Do NOT invent information — only extract what was actually discussed.
+8. Return ONLY valid JSON, no markdown fences, no explanation."""
 
 
-def sanitize_mermaid_text(text: str) -> str:
-    """Remove/escape characters that break Mermaid syntax."""
-    text = text.strip()
-    text = re.sub(r'[(){}[\]"\'`#;|<>]', '', text)
-    text = text.replace('\n', ' ').replace('\r', ' ')
-    text = re.sub(r'\s+', ' ', text)
-    return text[:60]  # Limit label length
+async def generate_mindmap_llm(
+    text: str,
+    title: str = "Transcription",
+    language: str = "hi",
+    context_hint: str = "",
+    on_progress: Callable[[float, str], Awaitable[None]] | None = None,
+) -> str:
+    """
+    Generate mind-map JSON using GPT-4o-mini.
+    Returns JSON string of the mind-map structure.
+    Falls back to simple extraction on error.
+    """
+    if not OPENAI_API_KEY or not text or len(text.strip()) < 50:
+        return _fallback_mindmap(text, title)
+
+    if on_progress:
+        await on_progress(0, "Generating mind-map with AI...")
+
+    # Truncate text if too long (keep first ~12k chars to fit in context)
+    truncated = text[:12000] if len(text) > 12000 else text
+
+    user_msg = f"Video title: {title}\n"
+    if context_hint:
+        user_msg += f"Context: {context_hint}\n"
+    user_msg += f"Language: {language}\n\nTranscription:\n{truncated}"
+
+    payload = {
+        "model": "gpt-4o-mini",
+        "messages": [
+            {"role": "system", "content": MINDMAP_SYSTEM_PROMPT},
+            {"role": "user", "content": user_msg},
+        ],
+        "temperature": 0.3,
+        "max_tokens": 4000,
+        "response_format": {"type": "json_object"},
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            response = await client.post(
+                OPENAI_CHAT_URL,
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {OPENAI_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+            )
+
+        if response.status_code != 200:
+            logger.error(f"Mind-map generation failed ({response.status_code}): {response.text}")
+            return _fallback_mindmap(text, title)
+
+        result = response.json()
+        content = result["choices"][0]["message"]["content"].strip()
+
+        # Validate it's proper JSON
+        parsed = json.loads(content)
+
+        # Ensure required structure exists
+        if "themes" not in parsed:
+            parsed = {"title": title, "themes": []}
+        if "title" not in parsed:
+            parsed["title"] = title
+
+        if on_progress:
+            theme_count = len(parsed.get("themes", []))
+            await on_progress(100, f"Mind-map generated ({theme_count} themes).")
+
+        logger.info(f"LLM mind-map generated: {len(parsed.get('themes', []))} themes")
+        return json.dumps(parsed, ensure_ascii=False)
+
+    except (json.JSONDecodeError, KeyError) as e:
+        logger.error(f"Mind-map JSON parse error: {e}")
+        return _fallback_mindmap(text, title)
+    except Exception as e:
+        logger.error(f"Mind-map generation error: {e}")
+        return _fallback_mindmap(text, title)
 
 
-def extract_key_phrases(text: str, max_phrases: int = 8) -> list[str]:
-    """Extract key phrases from text using simple frequency analysis."""
-    # Split into sentences
-    sentences = re.split(r'[।.!?\n]+', text)
-    sentences = [s.strip() for s in sentences if len(s.strip()) > 10]
+def _fallback_mindmap(text: str, title: str) -> str:
+    """Simple fallback when LLM is unavailable — extract basic structure."""
+    STOP_WORDS = {
+        "है", "हैं", "था", "थे", "थी", "को", "का", "के", "की", "में", "पर", "से",
+        "ने", "और", "या", "भी", "तो", "ही", "एक", "यह", "वह", "इस", "उस", "जो",
+        "the", "is", "are", "was", "were", "a", "an", "and", "or", "but", "in",
+        "on", "at", "to", "for", "of", "with", "by", "from", "this", "that",
+        "it", "he", "she", "we", "they", "you", "i", "not", "so", "if", "as",
+    }
 
-    # Extract meaningful words
-    all_words = []
-    for sentence in sentences:
-        words = re.findall(r'\b[\w\u0900-\u097F]+\b', sentence)
-        for word in words:
-            if len(word) > 2 and word.lower() not in HINDI_STOP_WORDS:
-                all_words.append(word)
+    if not text or len(text.strip()) < 20:
+        return json.dumps({"title": title, "themes": []}, ensure_ascii=False)
 
-    # Get top words
-    word_counts = Counter(all_words)
-    top_words = [w for w, _ in word_counts.most_common(30)]
+    words = re.findall(r'\b[\w\u0900-\u097F]{3,}\b', text.lower())
+    filtered = [w for w in words if w not in STOP_WORDS]
+    top_words = [w for w, _ in Counter(filtered).most_common(12)]
 
-    # Build phrases by grouping nearby top words in sentences
-    phrases = []
-    for sentence in sentences[:20]:
-        words = sentence.split()
-        phrase_words = [w for w in words if any(tw in w for tw in top_words[:15])]
-        if len(phrase_words) >= 2:
-            phrase = " ".join(phrase_words[:5])
-            phrases.append(phrase)
-
-    # Deduplicate and limit
-    seen = set()
-    unique = []
-    for p in phrases:
-        p_clean = sanitize_mermaid_text(p)
-        if p_clean and p_clean not in seen and len(p_clean) > 5:
-            seen.add(p_clean)
-            unique.append(p_clean)
-            if len(unique) >= max_phrases:
-                break
-
-    # Fallback: use top words if phrases extraction yields little
-    if len(unique) < 3:
-        unique = [sanitize_mermaid_text(w) for w in top_words[:max_phrases] if len(w) > 2]
-
-    return unique
-
-
-def generate_mindmap_from_segments(segments: list[dict], title: str = "Transcription") -> str:
-    """Generate Mermaid mind-map from timestamped segments."""
-    if not segments:
-        return generate_mindmap_from_text("", title)
-
-    # Group segments into time-based sections
-    total_duration = segments[-1]["end"] if segments else 0
-    section_count = min(5, max(2, len(segments) // 10))
-    section_duration = total_duration / section_count if section_count > 0 else total_duration
-
-    sections = {}
-    for seg in segments:
-        section_idx = int(seg["start"] / section_duration) if section_duration > 0 else 0
-        section_idx = min(section_idx, section_count - 1)
-        if section_idx not in sections:
-            sections[section_idx] = []
-        sections[section_idx].append(seg["text"])
-
-    safe_title = sanitize_mermaid_text(title) or "Transcription"
-
-    lines = ["mindmap", f"  root(({safe_title}))"]
-
-    for idx in sorted(sections.keys()):
-        start_min = int((idx * section_duration) / 60)
-        end_min = int(((idx + 1) * section_duration) / 60)
-        section_label = sanitize_mermaid_text(f"{start_min}m - {end_min}m")
-        lines.append(f"    {section_label}")
-
-        section_text = " ".join(sections[idx])
-        phrases = extract_key_phrases(section_text, max_phrases=4)
-        for phrase in phrases:
-            lines.append(f"      {phrase}")
-
-    return "\n".join(lines)
-
-
-def generate_mindmap_from_text(text: str, title: str = "Transcription") -> str:
-    """Generate Mermaid mind-map from plain text (fallback when no segments)."""
-    safe_title = sanitize_mermaid_text(title) or "Transcription"
-
-    if not text or len(text.strip()) < 10:
-        return f"mindmap\n  root(({safe_title}))\n    No content available"
-
-    phrases = extract_key_phrases(text, max_phrases=8)
-
-    lines = ["mindmap", f"  root(({safe_title}))"]
-
-    # Group phrases into logical clusters (simple: just pairs)
-    for i in range(0, len(phrases), 2):
-        group = phrases[i:i+2]
+    themes = []
+    for i in range(0, min(len(top_words), 9), 3):
+        group = top_words[i:i + 3]
         if group:
-            lines.append(f"    {group[0]}")
-            for sub in group[1:]:
-                lines.append(f"      {sub}")
+            themes.append({
+                "label": group[0].capitalize(),
+                "points": [{"text": w, "detail": None} for w in group[1:]],
+            })
 
-    return "\n".join(lines)
+    return json.dumps({"title": title, "themes": themes}, ensure_ascii=False)
+
+
+# Functions used by orchestrator
+async def generate_mindmap_from_segments(
+    segments: list[dict],
+    title: str = "Transcription",
+    language: str = "hi",
+    context_hint: str = "",
+    on_progress: Callable[[float, str], Awaitable[None]] | None = None,
+) -> str:
+    """Generate mind-map from timestamped segments."""
+    text = " ".join(seg.get("text", "") for seg in segments)
+    return await generate_mindmap_llm(text, title, language, context_hint, on_progress)
+
+
+async def generate_mindmap_from_text(
+    text: str,
+    title: str = "Transcription",
+    language: str = "hi",
+    context_hint: str = "",
+    on_progress: Callable[[float, str], Awaitable[None]] | None = None,
+) -> str:
+    """Generate mind-map from plain text."""
+    return await generate_mindmap_llm(text, title, language, context_hint, on_progress)

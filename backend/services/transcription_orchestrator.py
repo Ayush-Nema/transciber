@@ -197,10 +197,23 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
         await _publish_progress(job_id, 85, "Generating mind-map...", "generating_mindmap")
 
         title = job.title or "Transcription"
+        mm_context = job.context_hint or job.prompt or ""
+
+        async def on_mindmap_progress(pct, msg):
+            scaled = 85 + pct * 0.15  # Mind-map is 85-100%
+            await _update_job(db, job, progress=scaled, progress_message=msg)
+            await _publish_progress(job_id, scaled, msg, "generating_mindmap")
+
         if segments:
-            mindmap = generate_mindmap_from_segments(segments, title)
+            mindmap = await generate_mindmap_from_segments(
+                segments, title, language=job.language,
+                context_hint=mm_context, on_progress=on_mindmap_progress,
+            )
         else:
-            mindmap = generate_mindmap_from_text(transcription_text, title)
+            mindmap = await generate_mindmap_from_text(
+                transcription_text, title, language=job.language,
+                context_hint=mm_context, on_progress=on_mindmap_progress,
+            )
 
         await _update_job(db, job,
                           mindmap_mermaid=mindmap,
