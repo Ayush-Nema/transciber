@@ -1,0 +1,58 @@
+services:
+  # ── Frontend (React + Vite) ──
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    volumes:
+      - ./frontend/src:/app/src   # Hot reload
+
+  # ── Backend (FastAPI) ──
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - ASR_MODE=openai
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ASR_DOCKER_URL=http://asr-service:8001
+      - HF_MODEL_ID=openai/whisper-large-v3
+      - HF_TOKEN=${HF_TOKEN:-}
+    volumes:
+      - ./backend:/app             # Hot reload
+      - backend-data:/app/data     # Persistent storage for videos/audio/db
+
+  # ── ASR Microservice (faster-whisper) — optional, for local/offline mode ──
+  # Start with: docker compose --profile local-asr up
+  asr-service:
+    profiles:
+      - local-asr
+    build:
+      context: ./asr-service
+      args:
+        WHISPER_MODEL_SIZE: base
+        HF_TOKEN: ${HF_TOKEN:-}
+    ports:
+      - "8001:8001"
+    environment:
+      - WHISPER_MODEL_SIZE=base
+      - WHISPER_DEVICE=cpu
+      - WHISPER_COMPUTE_TYPE=int8
+      - HF_TOKEN=${HF_TOKEN:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+volumes:
+  backend-data:

@@ -8,10 +8,11 @@
   - pause
   - scroll
   - transcribe button below viewing tile
-- Transcription
-- Web-socket/ SSE (server-sent event) integration → message while the process is in progress
-- Convert Hinglish (hindi language in En script) to Devnagri script
+- Transcription (for later)
+- Web-socket/ SSE (server-sent event) integration → progress/ update message while the process is in progress
 - Mind-map as mermaid chart
+- Transcribe part of the video as selected by the user
+- Facility of break down longer YouTube videos into smaller parts and then transcribe
 
 
 ### CSS decorations

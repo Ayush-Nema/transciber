@@ -1,0 +1,16 @@
+# Docker Compose override for HuggingFace API mode (no ASR container needed)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.hf.yml up
+version: "3.8"
+
+services:
+  backend:
+    environment:
+      - ASR_MODE=huggingface
+      - HF_MODEL_ID=openai/whisper-large-v3
+      - HF_TOKEN=${HF_TOKEN:-}
+    depends_on:
+      - frontend  # Remove asr-service dependency
+
+  asr-service:
+    profiles:
+      - disabled   # Don't start the ASR container

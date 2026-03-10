@@ -1,5 +1,22 @@
-.DS_Store/
-.idea/
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
 .venv
 
+# Data
+backend/data/
+*.db
+
+# Environment
 .env
+*.env.local
+
+# Build
+frontend/dist/
+*.egg-info/
+
+# IDE
+.DS_Store/
+.vscode/
+.idea/
