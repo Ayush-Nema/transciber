@@ -25,7 +25,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 WORKDIR /app
 COPY . .
 
-RUN mkdir -p data/videos data/audio
+RUN mkdir -p data/videos data/audio data/subs
 
 EXPOSE 8000
 

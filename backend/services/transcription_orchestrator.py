@@ -5,8 +5,9 @@ from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.job import TranscriptionJob, JobStatus, ASRProvider
+from models.job import TranscriptionJob, JobStatus, ASRProvider, Platform
 from services.video_service import download_video, extract_audio, preprocess_audio, split_audio
+from services.subtitle_extractor import extract_subtitles
 from services.mindmap_service import generate_mindmap_from_segments, generate_mindmap_from_text
 from services.sse_manager import sse_manager
 from services import asr_openai, asr_docker, asr_huggingface
@@ -38,10 +39,40 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
     job_id = job.id
 
     try:
+        # ── Step 0: Try YouTube subtitle extraction (fast path) ──
+        subtitle_result = None
+        if job.platform == Platform.YOUTUBE and not job.start_time and not job.end_time:
+            await _update_job(db, job, status=JobStatus.DOWNLOADING, progress=0.0,
+                              progress_message="Checking for existing subtitles...")
+            await _publish_progress(job_id, 0, "Checking for YouTube subtitles...", "downloading")
+
+            async def on_sub_progress(pct, msg):
+                scaled = pct * 0.15  # Subtitle check is 0-15%
+                await _update_job(db, job, progress=scaled, progress_message=msg)
+                await _publish_progress(job_id, scaled, msg, "downloading")
+
+            try:
+                subtitle_result = await extract_subtitles(
+                    job.url, job_id, language=job.language, on_progress=on_sub_progress,
+                )
+            except Exception as e:
+                logger.warning(f"Subtitle extraction failed for {job_id}, falling back to ASR: {e}")
+                subtitle_result = None
+
+            if subtitle_result:
+                source = subtitle_result.get("source", "subtitles")
+                source_label = "manual subtitles" if source == "manual" else "auto-captions"
+                logger.info(f"Job {job_id}: using YouTube {source_label} (skipping ASR)")
+                await _publish_progress(
+                    job_id, 15,
+                    f"Found YouTube {source_label}! Skipping audio transcription.",
+                    "downloading",
+                )
+
         # ── Step 1: Download Video ──
-        await _update_job(db, job, status=JobStatus.DOWNLOADING, progress=0.0,
+        await _update_job(db, job, status=JobStatus.DOWNLOADING, progress=0.0 if not subtitle_result else 15.0,
                           progress_message="Starting download...")
-        await _publish_progress(job_id, 0, "Starting video download...", "downloading")
+        await _publish_progress(job_id, 15 if subtitle_result else 0, "Starting video download...", "downloading")
 
         async def on_download_progress(pct, msg):
             scaled = pct * 0.3  # Download is 0-30% of total
@@ -53,68 +84,84 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
                           progress_message="Download complete.")
         await _publish_progress(job_id, 30, "Download complete.", "downloading")
 
-        # ── Step 2: Extract Audio ──
-        await _update_job(db, job, status=JobStatus.EXTRACTING_AUDIO,
-                          progress_message="Extracting audio...")
-        await _publish_progress(job_id, 30, "Extracting audio...", "extracting_audio")
+        # ── Step 2: Extract Audio (skip if using subtitles) ──
+        audio_path = None
+        if not subtitle_result:
+            await _update_job(db, job, status=JobStatus.EXTRACTING_AUDIO,
+                              progress_message="Extracting audio...")
+            await _publish_progress(job_id, 30, "Extracting audio...", "extracting_audio")
 
-        async def on_extract_progress(pct, msg):
-            scaled = 30 + pct * 0.1  # Extract is 30-40%
-            await _update_job(db, job, progress=scaled, progress_message=msg)
-            await _publish_progress(job_id, scaled, msg, "extracting_audio")
+            async def on_extract_progress(pct, msg):
+                scaled = 30 + pct * 0.1  # Extract is 30-40%
+                await _update_job(db, job, progress=scaled, progress_message=msg)
+                await _publish_progress(job_id, scaled, msg, "extracting_audio")
 
-        audio_path = await extract_audio(
-            video_path, job_id,
-            start_time=job.start_time,
-            end_time=job.end_time,
-            on_progress=on_extract_progress,
-        )
+            audio_path = await extract_audio(
+                video_path, job_id,
+                start_time=job.start_time,
+                end_time=job.end_time,
+                on_progress=on_extract_progress,
+            )
 
-        # ── Step 2b: Preprocess Audio (noise reduction + normalization) ──
-        await _publish_progress(job_id, 35, "Preprocessing audio...", "extracting_audio")
-        audio_path = await preprocess_audio(audio_path, job_id, on_progress=on_extract_progress)
+            # Preprocess Audio (noise reduction + normalization)
+            await _publish_progress(job_id, 35, "Preprocessing audio...", "extracting_audio")
+            audio_path = await preprocess_audio(audio_path, job_id, on_progress=on_extract_progress)
 
-        await _update_job(db, job, audio_path=str(audio_path), progress=40.0,
-                          progress_message="Audio extracted and preprocessed.")
-        await _publish_progress(job_id, 40, "Audio ready.", "extracting_audio")
+            await _update_job(db, job, audio_path=str(audio_path), progress=40.0,
+                              progress_message="Audio extracted and preprocessed.")
+            await _publish_progress(job_id, 40, "Audio ready.", "extracting_audio")
+        else:
+            await _publish_progress(job_id, 40, "Skipping audio extraction (using subtitles).", "extracting_audio")
 
-        # ── Step 3: Transcribe ──
+        # ── Step 3: Transcribe (or use subtitles) ──
         await _update_job(db, job, status=JobStatus.TRANSCRIBING,
                           progress_message="Starting transcription...")
         await _publish_progress(job_id, 40, "Starting transcription...", "transcribing")
 
-        async def on_transcribe_progress(pct, msg):
-            scaled = 40 + pct * 0.45  # Transcribe is 40-85%
-            await _update_job(db, job, progress=scaled, progress_message=msg)
-            await _publish_progress(job_id, scaled, msg, "transcribing")
-
-        # Choose ASR provider
-        if job.asr_provider == ASRProvider.OPENAI:
-            asr_module = asr_openai
-        elif job.asr_provider == ASRProvider.DOCKER:
-            asr_module = asr_docker
-        else:
-            asr_module = asr_huggingface
-
-        # Build kwargs — only OpenAI supports prompt; others ignore it
-        transcribe_kwargs = {"language": job.language, "on_progress": on_transcribe_progress}
-        if job.asr_provider == ASRProvider.OPENAI and job.prompt:
-            transcribe_kwargs["prompt"] = job.prompt
-
-        # Handle chunked transcription for long videos
-        if job.split_duration and job.split_duration > 0:
-            chunks = await split_audio(audio_path, job_id, job.split_duration)
-            await _publish_progress(job_id, 42, f"Split into {len(chunks)} chunks.", "transcribing")
-            result = await asr_module.transcribe_audio_chunked(
-                chunks, **transcribe_kwargs
+        if subtitle_result:
+            # Fast path: use pre-extracted subtitles
+            transcription_text = subtitle_result.get("text", "")
+            segments = subtitle_result.get("segments", [])
+            source_label = "manual subtitles" if subtitle_result.get("source") == "manual" else "auto-captions"
+            await _publish_progress(
+                job_id, 75,
+                f"Using YouTube {source_label} ({len(segments)} segments).",
+                "transcribing",
             )
         else:
-            result = await asr_module.transcribe_audio(
-                audio_path, **transcribe_kwargs
-            )
+            # Standard ASR path
+            async def on_transcribe_progress(pct, msg):
+                scaled = 40 + pct * 0.45  # Transcribe is 40-85%
+                await _update_job(db, job, progress=scaled, progress_message=msg)
+                await _publish_progress(job_id, scaled, msg, "transcribing")
 
-        transcription_text = result.get("text", "")
-        segments = result.get("segments", [])
+            # Choose ASR provider
+            if job.asr_provider == ASRProvider.OPENAI:
+                asr_module = asr_openai
+            elif job.asr_provider == ASRProvider.DOCKER:
+                asr_module = asr_docker
+            else:
+                asr_module = asr_huggingface
+
+            # Build kwargs — only OpenAI supports prompt; others ignore it
+            transcribe_kwargs = {"language": job.language, "on_progress": on_transcribe_progress}
+            if job.asr_provider == ASRProvider.OPENAI and job.prompt:
+                transcribe_kwargs["prompt"] = job.prompt
+
+            # Handle chunked transcription for long videos
+            if job.split_duration and job.split_duration > 0:
+                chunks = await split_audio(audio_path, job_id, job.split_duration)
+                await _publish_progress(job_id, 42, f"Split into {len(chunks)} chunks.", "transcribing")
+                result = await asr_module.transcribe_audio_chunked(
+                    chunks, **transcribe_kwargs
+                )
+            else:
+                result = await asr_module.transcribe_audio(
+                    audio_path, **transcribe_kwargs
+                )
+
+            transcription_text = result.get("text", "")
+            segments = result.get("segments", [])
 
         await _update_job(db, job, progress=78.0,
                           progress_message="Raw transcription done, cleaning up...")

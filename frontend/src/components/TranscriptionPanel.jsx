@@ -7,6 +7,7 @@ function formatTime(seconds) {
 }
 
 export default function TranscriptionPanel({ transcription, segments, currentTime, onSeekTo }) {
+  const [viewMode, setViewMode] = useState('paragraph'); // 'paragraph' | 'timestamps'
   const [activeIdx, setActiveIdx] = useState(-1);
   const panelRef = useRef(null);
 
@@ -18,13 +19,15 @@ export default function TranscriptionPanel({ transcription, segments, currentTim
     );
     if (idx !== -1 && idx !== activeIdx) {
       setActiveIdx(idx);
-      // Auto-scroll to active segment
-      const el = panelRef.current?.querySelector(`[data-seg="${idx}"]`);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      // Auto-scroll to active segment in timestamp view
+      if (viewMode === 'timestamps') {
+        const el = panelRef.current?.querySelector(`[data-seg="${idx}"]`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
       }
     }
-  }, [currentTime, segments, activeIdx]);
+  }, [currentTime, segments, activeIdx, viewMode]);
 
   if (!transcription) {
     return (
@@ -35,29 +38,86 @@ export default function TranscriptionPanel({ transcription, segments, currentTim
     );
   }
 
-  // If we have segments, show timestamped view
-  if (segments && segments.length > 0) {
-    return (
-      <div className="transcription-panel" ref={panelRef}>
-        {segments.map((seg, i) => (
-          <div
-            key={i}
-            data-seg={i}
-            className={`segment ${i === activeIdx ? 'active' : ''}`}
-            onClick={() => onSeekTo?.(seg.start)}
-          >
-            <span className="segment-time">{formatTime(seg.start)}</span>
-            <span className="segment-text">{seg.text}</span>
-          </div>
-        ))}
-      </div>
-    );
-  }
+  const hasSegments = segments && segments.length > 0;
 
-  // Fallback: plain text
   return (
-    <div className="transcription-panel">
-      <div className="transcription-text">{transcription}</div>
+    <div className="transcription-panel" ref={panelRef}>
+      {/* View mode toggle */}
+      {hasSegments && (
+        <div style={{
+          display: 'flex',
+          gap: 16,
+          padding: '8px 0 12px',
+          borderBottom: '1px solid var(--border)',
+          marginBottom: 12,
+        }}>
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            cursor: 'pointer',
+            fontSize: '0.85rem',
+            color: viewMode === 'paragraph' ? 'var(--accent)' : 'var(--text-secondary)',
+          }}>
+            <input
+              type="radio"
+              name="viewMode"
+              value="paragraph"
+              checked={viewMode === 'paragraph'}
+              onChange={() => setViewMode('paragraph')}
+              style={{ accentColor: 'var(--accent)' }}
+            />
+            Paragraph
+          </label>
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            cursor: 'pointer',
+            fontSize: '0.85rem',
+            color: viewMode === 'timestamps' ? 'var(--accent)' : 'var(--text-secondary)',
+          }}>
+            <input
+              type="radio"
+              name="viewMode"
+              value="timestamps"
+              checked={viewMode === 'timestamps'}
+              onChange={() => setViewMode('timestamps')}
+              style={{ accentColor: 'var(--accent)' }}
+            />
+            Timestamps
+          </label>
+        </div>
+      )}
+
+      {/* Paragraph view (default) */}
+      {(!hasSegments || viewMode === 'paragraph') && (
+        <div className="transcription-text" style={{
+          lineHeight: 1.8,
+          fontSize: '0.95rem',
+          whiteSpace: 'pre-wrap',
+          color: 'var(--text-primary)',
+        }}>
+          {transcription}
+        </div>
+      )}
+
+      {/* Timestamp view */}
+      {hasSegments && viewMode === 'timestamps' && (
+        <div>
+          {segments.map((seg, i) => (
+            <div
+              key={i}
+              data-seg={i}
+              className={`segment ${i === activeIdx ? 'active' : ''}`}
+              onClick={() => onSeekTo?.(seg.start)}
+            >
+              <span className="segment-time">{formatTime(seg.start)}</span>
+              <span className="segment-text">{seg.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

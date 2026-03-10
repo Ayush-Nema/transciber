@@ -19,6 +19,7 @@ services:
     environment:
       - ASR_MODE=openai
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_TRANSCRIPTION_MODEL=${OPENAI_TRANSCRIPTION_MODEL:-gpt-4o-mini-transcribe}
       - ASR_DOCKER_URL=http://asr-service:8001
       - HF_MODEL_ID=openai/whisper-large-v3
       - HF_TOKEN=${HF_TOKEN:-}

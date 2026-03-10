@@ -1,4 +1,4 @@
-"""ASR client using OpenAI Whisper API."""
+"""ASR client using OpenAI Transcription API."""
 import asyncio
 import logging
 from pathlib import Path
@@ -6,7 +6,7 @@ from typing import Callable, Awaitable
 
 import httpx
 
-from config import OPENAI_API_KEY
+from config import OPENAI_API_KEY, OPENAI_TRANSCRIPTION_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +22,13 @@ async def transcribe_audio(
     on_progress: Callable[[float, str], Awaitable[None]] | None = None,
 ) -> dict:
     """
-    Send audio to OpenAI Whisper API.
+    Send audio to OpenAI Transcription API.
     Returns: {"text": str, "segments": [{"start": float, "end": float, "text": str}], "language": str}
+
+    Model behavior:
+    - whisper-1: supports verbose_json with segment timestamps
+    - gpt-4o-mini-transcribe / gpt-4o-transcribe: only json/text, better accuracy (especially Hindi),
+      but no segment-level timestamps from the API
     """
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY is not set. Add it to your .env file.")
@@ -35,19 +40,33 @@ async def transcribe_audio(
             "Use the split feature to break it into smaller chunks."
         )
 
+    model = OPENAI_TRANSCRIPTION_MODEL
+    is_whisper = model == "whisper-1"
+
     if on_progress:
-        await on_progress(0, "Sending audio to OpenAI Whisper API...")
+        label = "Whisper" if is_whisper else model
+        await on_progress(0, f"Sending audio to OpenAI {label}...")
 
     lang = language if language and language != "auto" else None
 
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
         with open(audio_path, "rb") as f:
             files = {"file": (audio_path.name, f, "audio/wav")}
-            data = {
-                "model": "whisper-1",
-                "response_format": "verbose_json",  # gives timestamps
-                "timestamp_granularities[]": "segment",
-            }
+
+            if is_whisper:
+                # whisper-1 supports verbose_json with timestamps
+                data = {
+                    "model": model,
+                    "response_format": "verbose_json",
+                    "timestamp_granularities[]": "segment",
+                }
+            else:
+                # gpt-4o-mini-transcribe / gpt-4o-transcribe: json only
+                data = {
+                    "model": model,
+                    "response_format": "json",
+                }
+
             if lang:
                 data["language"] = lang
             if prompt:
@@ -65,7 +84,7 @@ async def transcribe_audio(
 
     result = response.json()
 
-    # Parse segments from verbose_json response
+    # Parse segments (only available with whisper-1 verbose_json)
     segments = []
     for seg in result.get("segments", []):
         segments.append({
@@ -78,9 +97,13 @@ async def transcribe_audio(
     full_text = result.get("text", "")
 
     if on_progress:
-        await on_progress(100, "Transcription complete (OpenAI Whisper).")
+        label = "Whisper" if is_whisper else model
+        await on_progress(100, f"Transcription complete (OpenAI {label}).")
 
-    logger.info(f"OpenAI transcription done: {len(segments)} segments, language={detected_lang}")
+    logger.info(
+        f"OpenAI transcription done (model={model}): "
+        f"{len(segments)} segments, language={detected_lang}"
+    )
 
     return {
         "text": full_text,
