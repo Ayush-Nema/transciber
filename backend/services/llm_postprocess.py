@@ -60,7 +60,7 @@ async def postprocess_transcription(
             {"role": "user", "content": user_msg},
         ],
         "temperature": 0.1,  # Low temp for faithful correction
-        "max_tokens": 16000,
+        "max_completion_tokens": 16384,
     }
 
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
@@ -78,7 +78,16 @@ async def postprocess_transcription(
         return raw_text  # Fallback to raw text on error
 
     result = response.json()
-    corrected = result["choices"][0]["message"]["content"].strip()
+    choice = result["choices"][0]
+    corrected = choice["message"]["content"].strip()
+
+    # If LLM output was truncated, fall back to raw text to avoid losing content
+    if choice.get("finish_reason") == "length":
+        logger.warning(
+            "LLM post-processing output was truncated (finish_reason=length). "
+            "Using raw transcription to avoid content loss."
+        )
+        return raw_text
 
     if on_progress:
         await on_progress(100, "Transcription cleaned up.")

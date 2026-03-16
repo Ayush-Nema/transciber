@@ -1,11 +1,12 @@
-"""Routes for serving video files."""
+"""Routes for serving video and audio files."""
 import os
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
-from config import VIDEOS_DIR
+from config import VIDEOS_DIR, AUDIO_DIR
+from services.video_service import convert_to_mp3
 
 router = APIRouter(prefix="/api/video", tags=["video"])
 
@@ -55,6 +56,26 @@ async def serve_video(job_id: str, request: Request):
         video_path,
         media_type=content_type,
         headers={"Accept-Ranges": "bytes"},
+    )
+
+
+@router.get("/{job_id}/mp3")
+async def serve_mp3(job_id: str):
+    """Convert video to MP3 and serve for download."""
+    # Check for cached MP3 first
+    mp3_path = AUDIO_DIR / f"{job_id}.mp3"
+    if not mp3_path.exists():
+        # Need the source video to convert
+        video_files = list(VIDEOS_DIR.glob(f"{job_id}.*"))
+        if not video_files:
+            raise HTTPException(status_code=404, detail="Video not found")
+        mp3_path = await convert_to_mp3(video_files[0], job_id)
+
+    return FileResponse(
+        mp3_path,
+        media_type="audio/mpeg",
+        filename=f"{job_id}.mp3",
+        headers={"Content-Disposition": f'attachment; filename="{job_id}.mp3"'},
     )
 
 

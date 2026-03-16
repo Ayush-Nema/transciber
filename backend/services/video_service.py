@@ -1,4 +1,5 @@
 import asyncio
+import os
 import re
 import logging
 from pathlib import Path
@@ -9,7 +10,31 @@ import yt_dlp
 from config import VIDEOS_DIR, AUDIO_DIR
 from models.job import Platform
 
+import json
+
+INSTAGRAM_COOKIES_BROWSER = os.environ.get("INSTAGRAM_COOKIES_BROWSER", "")  # e.g. "chrome", "firefox"
+
 logger = logging.getLogger(__name__)
+
+
+def _parse_loudnorm_stats(ffmpeg_stderr: str) -> dict | None:
+    """Extract measured loudness values from ffmpeg loudnorm print_format=json output."""
+    # ffmpeg prints the JSON block in stderr after the loudnorm analysis pass
+    try:
+        # Find the JSON block between the last { and }
+        start = ffmpeg_stderr.rfind("{")
+        end = ffmpeg_stderr.rfind("}") + 1
+        if start == -1 or end == 0:
+            return None
+        raw = ffmpeg_stderr[start:end]
+        data = json.loads(raw)
+        # Validate expected keys exist
+        required = ["input_i", "input_tp", "input_lra", "input_thresh", "target_offset"]
+        if all(k in data for k in required):
+            return data
+        return None
+    except (json.JSONDecodeError, ValueError):
+        return None
 
 
 def detect_platform(url: str) -> Platform:
@@ -32,6 +57,9 @@ async def fetch_video_info(url: str) -> dict:
         "skip_download": True,
     }
 
+    if INSTAGRAM_COOKIES_BROWSER and "instagram.com" in url.lower():
+        ydl_opts["cookiesfrombrowser"] = (INSTAGRAM_COOKIES_BROWSER,)
+
     def _extract():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             return ydl.extract_info(url, download=False)
@@ -50,6 +78,7 @@ async def fetch_video_info(url: str) -> dict:
 async def download_video(
     url: str,
     job_id: str,
+    expected_duration: float | None = None,
     on_progress: Callable[[float, str], Awaitable[None]] | None = None,
 ) -> Path:
     """Download video and return file path."""
@@ -72,7 +101,20 @@ async def download_video(
         "no_warnings": True,
         "progress_hooks": [_progress_hook],
         "socket_timeout": 30,
+        # Instagram often serves incomplete content without proper headers/cookies
+        "http_headers": {
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/131.0.0.0 Safari/537.36"
+            ),
+        },
+        "extractor_args": {"instagram": {"skip": ["dash"]}},
     }
+
+    # Use browser cookies for Instagram to get full content
+    if INSTAGRAM_COOKIES_BROWSER and "instagram.com" in url.lower():
+        ydl_opts["cookiesfrombrowser"] = (INSTAGRAM_COOKIES_BROWSER,)
 
     def _download():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -96,7 +138,34 @@ async def download_video(
     if not video_files:
         raise FileNotFoundError(f"Downloaded video not found for job {job_id}")
 
-    return video_files[0]
+    downloaded_path = video_files[0]
+
+    # Verify downloaded duration matches expected
+    try:
+        probe_cmd = [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(downloaded_path),
+        ]
+        proc = await asyncio.create_subprocess_exec(
+            *probe_cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+        actual_duration = float(stdout.decode().strip())
+        logger.info(f"Downloaded video duration: {actual_duration:.1f}s for job {job_id}")
+        if expected_duration and actual_duration < expected_duration * 0.8:
+            logger.warning(
+                f"Downloaded video ({actual_duration:.1f}s) is significantly shorter than "
+                f"expected ({expected_duration:.1f}s) for job {job_id}. "
+                "Instagram may have served a truncated version."
+            )
+    except Exception as e:
+        logger.warning(f"Could not verify video duration for {job_id}: {e}")
+
+    return downloaded_path
 
 
 async def extract_audio(
@@ -149,29 +218,70 @@ async def preprocess_audio(
     on_progress: Callable[[float, str], Awaitable[None]] | None = None,
 ) -> Path:
     """
-    Preprocess audio for better transcription accuracy:
-    - High-pass filter at 80Hz to remove low-frequency rumble
-    - Noise gate to suppress background noise
-    - Volume normalization (loudnorm) for consistent levels
+    Preprocess audio for better transcription accuracy.
+
+    Two-pass loudnorm to avoid the single-pass startup ramp that silences the
+    first several seconds.  We intentionally skip FFT-based noise reduction
+    (afftdn) because it builds a noise profile from the first few seconds of
+    audio — when those seconds contain speech (common in short-form content
+    like Instagram reels), it suppresses the opening dialogue.
     """
     processed_path = AUDIO_DIR / f"{job_id}_processed.wav"
 
     if on_progress:
-        await on_progress(0, "Preprocessing audio (noise reduction + normalization)...")
+        await on_progress(0, "Preprocessing audio (normalization)...")
 
-    cmd = [
+    # ── Pass 1: measure loudness stats ──
+    measure_cmd = [
         "ffmpeg", "-y",
         "-i", str(audio_path),
-        "-af", ",".join([
-            "highpass=f=80",           # Remove rumble below 80Hz
-            "afftdn=nf=-25",           # FFT-based noise reduction
-            "loudnorm=I=-16:TP=-1.5",  # EBU R128 loudness normalization
-        ]),
-        "-acodec", "pcm_s16le",
-        "-ar", "16000",
-        "-ac", "1",
-        str(processed_path),
+        "-af", "highpass=f=80,loudnorm=I=-16:TP=-1.5:print_format=json",
+        "-f", "null", "-",
     ]
+
+    proc1 = await asyncio.create_subprocess_exec(
+        *measure_cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr1 = await proc1.communicate()
+    stderr_text = stderr1.decode()
+
+    # Parse measured loudness values from ffmpeg output
+    measured = _parse_loudnorm_stats(stderr_text)
+
+    if measured:
+        # ── Pass 2: apply measured values (linear mode — no startup ramp) ──
+        loudnorm_filter = (
+            f"loudnorm=I=-16:TP=-1.5:LRA=11"
+            f":measured_I={measured['input_i']}"
+            f":measured_TP={measured['input_tp']}"
+            f":measured_LRA={measured['input_lra']}"
+            f":measured_thresh={measured['input_thresh']}"
+            f":offset={measured['target_offset']}"
+            f":linear=true"
+        )
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(audio_path),
+            "-af", f"highpass=f=80,{loudnorm_filter}",
+            "-acodec", "pcm_s16le",
+            "-ar", "16000",
+            "-ac", "1",
+            str(processed_path),
+        ]
+    else:
+        # Fallback: just highpass, skip loudnorm entirely
+        logger.warning("Could not parse loudnorm stats, using highpass only")
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(audio_path),
+            "-af", "highpass=f=80",
+            "-acodec", "pcm_s16le",
+            "-ar", "16000",
+            "-ac", "1",
+            str(processed_path),
+        ]
 
     process = await asyncio.create_subprocess_exec(
         *cmd,
@@ -188,6 +298,56 @@ async def preprocess_audio(
         await on_progress(100, "Audio preprocessing complete.")
 
     return processed_path
+
+
+async def convert_to_mp3(video_path: Path, job_id: str) -> Path:
+    """Convert video to MP3 audio file using ffmpeg."""
+    mp3_path = AUDIO_DIR / f"{job_id}.mp3"
+
+    if mp3_path.exists():
+        return mp3_path
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(video_path),
+        "-vn",
+        "-acodec", "libmp3lame",
+        "-ab", "192k",
+        "-ar", "44100",
+        "-ac", "2",
+        str(mp3_path),
+    ]
+
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await process.communicate()
+
+    if process.returncode != 0:
+        raise RuntimeError(f"MP3 conversion failed: {stderr.decode()[:300]}")
+
+    logger.info(f"Converted to MP3: {mp3_path} ({mp3_path.stat().st_size / (1024*1024):.1f}MB)")
+    return mp3_path
+
+
+async def probe_duration(file_path: Path) -> float | None:
+    """Get duration of an audio/video file in seconds."""
+    try:
+        cmd = [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(file_path),
+        ]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+        return float(stdout.decode().strip())
+    except Exception:
+        return None
 
 
 async def split_audio(

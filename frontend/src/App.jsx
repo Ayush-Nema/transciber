@@ -333,6 +333,7 @@ export default function App() {
                 segments={currentJob?.segments}
                 currentTime={videoTime}
                 onSeekTo={handleSeekTo}
+                jobId={currentJob?.id}
               />
             ) : (
               <MindMap mermaidCode={currentJob?.mindmap_mermaid} />

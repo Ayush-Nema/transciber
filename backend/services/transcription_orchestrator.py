@@ -6,7 +6,7 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.job import TranscriptionJob, JobStatus, ASRProvider, Platform
-from services.video_service import download_video, extract_audio, preprocess_audio, split_audio
+from services.video_service import download_video, extract_audio, preprocess_audio, split_audio, probe_duration
 from services.subtitle_extractor import extract_subtitles
 from services.mindmap_service import generate_mindmap_from_segments, generate_mindmap_from_text
 from services.sse_manager import sse_manager
@@ -79,7 +79,11 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
             await _update_job(db, job, progress=scaled, progress_message=msg)
             await _publish_progress(job_id, scaled, msg, "downloading")
 
-        video_path = await download_video(job.url, job_id, on_progress=on_download_progress)
+        video_path = await download_video(
+            job.url, job_id,
+            expected_duration=job.duration,
+            on_progress=on_download_progress,
+        )
         await _update_job(db, job, video_path=str(video_path), progress=30.0,
                           progress_message="Download complete.")
         await _publish_progress(job_id, 30, "Download complete.", "downloading")
@@ -96,16 +100,22 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
                 await _update_job(db, job, progress=scaled, progress_message=msg)
                 await _publish_progress(job_id, scaled, msg, "extracting_audio")
 
-            audio_path = await extract_audio(
+            raw_audio_path = await extract_audio(
                 video_path, job_id,
                 start_time=job.start_time,
                 end_time=job.end_time,
                 on_progress=on_extract_progress,
             )
 
-            # Preprocess Audio (noise reduction + normalization)
+            raw_dur = await probe_duration(raw_audio_path)
+            logger.info(f"[DEBUG] Job {job_id} — extracted audio duration: {raw_dur}s")
+
+            # Preprocess Audio (normalization)
             await _publish_progress(job_id, 35, "Preprocessing audio...", "extracting_audio")
-            audio_path = await preprocess_audio(audio_path, job_id, on_progress=on_extract_progress)
+            audio_path = await preprocess_audio(raw_audio_path, job_id, on_progress=on_extract_progress)
+
+            proc_dur = await probe_duration(audio_path)
+            logger.info(f"[DEBUG] Job {job_id} — preprocessed audio duration: {proc_dur}s")
 
             await _update_job(db, job, audio_path=str(audio_path), progress=40.0,
                               progress_message="Audio extracted and preprocessed.")
@@ -163,6 +173,12 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
             transcription_text = result.get("text", "")
             segments = result.get("segments", [])
 
+        # Log raw ASR output for debugging (first 500 chars)
+        logger.info(
+            f"[DEBUG] Job {job_id} — RAW ASR text (first 500 chars): "
+            f"{transcription_text[:500]!r}"
+        )
+
         await _update_job(db, job, progress=78.0,
                           progress_message="Raw transcription done, cleaning up...")
         await _publish_progress(job_id, 78, "Raw transcription done, cleaning up with LLM...", "transcribing")
@@ -174,10 +190,19 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
             await _publish_progress(job_id, scaled, msg, "transcribing")
 
         context = job.context_hint or job.prompt or ""
+        raw_text_before_llm = transcription_text
         transcription_text = await postprocess_transcription(
             transcription_text, language=job.language, context_hint=context,
             on_progress=on_postprocess_progress,
         )
+
+        # Log if LLM changed the beginning
+        if raw_text_before_llm[:100] != transcription_text[:100]:
+            logger.warning(
+                f"[DEBUG] Job {job_id} — LLM changed the beginning!\n"
+                f"  BEFORE: {raw_text_before_llm[:200]!r}\n"
+                f"  AFTER:  {transcription_text[:200]!r}"
+            )
         if segments:
             segments = await postprocess_segments(
                 segments, language=job.language, context_hint=context,

@@ -31,5 +31,7 @@ export const api = {
 
   getVideoUrl: (jobId) => `${API_BASE}/video/${jobId}`,
 
+  getMp3Url: (jobId) => `${API_BASE}/video/${jobId}/mp3`,
+
   getSSEUrl: (jobId) => `${API_BASE}/jobs/${jobId}/stream`,
 };
