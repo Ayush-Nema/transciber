@@ -1,10 +1,9 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import VideoPlayer from './components/VideoPlayer';
 import ProgressPanel from './components/ProgressPanel';
 import TranscriptionPanel from './components/TranscriptionPanel';
 import MindMap from './components/MindMap';
 import RangeSelector from './components/RangeSelector';
-import JobHistory from './components/JobHistory';
 import { api } from './hooks/useApi';
 import { useSSE } from './hooks/useSSE';
 
@@ -21,7 +20,6 @@ export default function App() {
   const [contextHint, setContextHint] = useState('');
 
   const [currentJob, setCurrentJob] = useState(null);
-  const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [fetchingInfo, setFetchingInfo] = useState(false);
   const [error, setError] = useState(null);
@@ -73,21 +71,8 @@ export default function App() {
   useEffect(() => {
     if (isDone && currentJob?.id) {
       api.getJob(currentJob.id).then(setCurrentJob).catch(console.error);
-      loadJobs();
     }
   }, [isDone]);
-
-  // ── Load jobs on mount ──
-  const loadJobs = useCallback(async () => {
-    try {
-      const data = await api.listJobs();
-      setJobs(data);
-    } catch (e) {
-      console.error('Failed to load jobs:', e);
-    }
-  }, []);
-
-  useEffect(() => { loadJobs(); }, [loadJobs]);
 
   // ── Fetch Video Info ──
   const handleFetchInfo = async () => {
@@ -125,24 +110,10 @@ export default function App() {
 
       const job = await api.createJob(jobData);
       setCurrentJob(job);
-      loadJobs();
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
-    }
-  };
-
-  // ── Select from history ──
-  const handleSelectJob = async (job) => {
-    setError(null);
-    try {
-      const fullJob = await api.getJob(job.id);
-      setCurrentJob(fullJob);
-      setUrl(fullJob.url);
-      if (fullJob.title) setVideoInfo({ title: fullJob.title, duration: fullJob.duration, thumbnail: fullJob.thumbnail_url });
-    } catch (e) {
-      setError(e.message);
     }
   };
 
@@ -306,8 +277,6 @@ export default function App() {
               />
             </div>
           </div>
-
-          <JobHistory jobs={jobs} onSelect={handleSelectJob} activeJobId={currentJob?.id} />
         </div>
 
         {/* Right: Transcription + Mind Map */}

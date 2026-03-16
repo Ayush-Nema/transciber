@@ -415,57 +415,6 @@ body {
   border-bottom-color: var(--accent);
 }
 
-/* ── Job History ── */
-.history-list {
-  margin-top: 24px;
-}
-
-.history-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  margin-bottom: 8px;
-  cursor: pointer;
-  transition: border-color 0.2s;
-}
-
-.history-item:hover { border-color: var(--accent); }
-
-.history-item .status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.status-dot.completed { background: var(--success); }
-.status-dot.failed { background: var(--error); }
-.status-dot.pending,
-.status-dot.downloading,
-.status-dot.extracting_audio,
-.status-dot.transcribing,
-.status-dot.generating_mindmap { background: var(--warning); }
-
-.history-item .title {
-  flex: 1;
-  font-size: 0.9rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.history-item .platform-badge {
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
 .platform-badge.youtube { background: #ff000020; color: #ff4444; }
 .platform-badge.instagram { background: #e1306c20; color: #e1306c; }
 .platform-badge.facebook { background: #1877f220; color: #4293f5; }

@@ -5,7 +5,6 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.database import get_db, async_session
@@ -134,16 +133,6 @@ async def get_job(job_id: str, db: AsyncSession = Depends(get_db)):
     return _job_to_response(job)
 
 
-@router.get("/", response_model=list[JobResponse])
-async def list_jobs(limit: int = 20, db: AsyncSession = Depends(get_db)):
-    """List recent jobs."""
-    result = await db.execute(
-        select(TranscriptionJob).order_by(TranscriptionJob.created_at.desc()).limit(limit)
-    )
-    jobs = result.scalars().all()
-    return [_job_to_response(j) for j in jobs]
-
-
 @router.get("/{job_id}/stream")
 async def stream_job_progress(job_id: str, db: AsyncSession = Depends(get_db)):
     """SSE endpoint for streaming job progress."""
@@ -171,37 +160,31 @@ async def stream_job_progress(job_id: str, db: AsyncSession = Depends(get_db)):
     )
 
 
-@router.delete("/{job_id}")
-async def delete_job(job_id: str, db: AsyncSession = Depends(get_db)):
-    """Delete a job."""
-    job = await db.get(TranscriptionJob, job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    await db.delete(job)
-    await db.commit()
-    return {"message": "Job deleted"}
-
-
 def _job_to_response(job: TranscriptionJob) -> JobResponse:
+    # Ensure segments is a list (older jobs might have stored it differently)
+    segments = job.segments
+    if segments is not None and not isinstance(segments, list):
+        segments = list(segments) if hasattr(segments, '__iter__') else None
+
     return JobResponse(
         id=job.id,
         url=job.url,
-        platform=job.platform.value,
-        asr_provider=job.asr_provider.value,
-        status=job.status.value,
-        progress=job.progress,
-        progress_message=job.progress_message,
+        platform=job.platform.value if job.platform else "youtube",
+        asr_provider=job.asr_provider.value if job.asr_provider else "openai",
+        status=job.status.value if job.status else "failed",
+        progress=job.progress or 0.0,
+        progress_message=job.progress_message or "",
         title=job.title,
         duration=job.duration,
         thumbnail_url=job.thumbnail_url,
         video_path=job.video_path,
-        language=job.language,
+        language=job.language or "hi",
         start_time=job.start_time,
         end_time=job.end_time,
         split_duration=job.split_duration,
         transcription=job.transcription,
-        segments=job.segments,
-        mindmap_mermaid=job.mindmap_mermaid,
+        segments=segments,
+        mindmap_mermaid=getattr(job, 'mindmap_mermaid', None),
         error_message=job.error_message,
         created_at=job.created_at.isoformat() if job.created_at else None,
     )
