@@ -19,13 +19,14 @@ router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 class CreateJobRequest(BaseModel):
     url: str
-    asr_provider: str = Field(default="openai", pattern="^(openai|docker|huggingface)$")
+    asr_provider: str = Field(default="openai", pattern="^(openai|docker)$")
     language: str = Field(default="hi", max_length=10)
     start_time: float | None = Field(default=None, ge=0)
     end_time: float | None = Field(default=None, ge=0)
     split_duration: int | None = Field(default=None, ge=60, description="Split duration in seconds (min 60)")
-    prompt: str | None = Field(default=None, max_length=1000, description="Context prompt for Whisper (e.g. expected vocabulary)")
-    context_hint: str | None = Field(default=None, max_length=500, description="Topic hint for LLM post-correction")
+    context: str | None = Field(default=None, max_length=1000, description="Context hint for ASR and LLM (e.g. topic, expected vocabulary)")
+    llm_cleanup: bool = Field(default=True, description="Run LLM post-correction on transcription")
+    generate_mindmap: bool = Field(default=True, description="Generate mind-map from transcription")
 
 
 class JobResponse(BaseModel):
@@ -103,8 +104,9 @@ async def create_job(req: CreateJobRequest, db: AsyncSession = Depends(get_db)):
         start_time=req.start_time,
         end_time=req.end_time,
         split_duration=req.split_duration,
-        prompt=req.prompt,
-        context_hint=req.context_hint,
+        prompt=req.context,
+        llm_cleanup=req.llm_cleanup,
+        generate_mindmap=req.generate_mindmap,
     )
 
     db.add(job)

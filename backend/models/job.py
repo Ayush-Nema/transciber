@@ -1,7 +1,7 @@
 import enum
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, Text, Float, Integer, Enum, DateTime, JSON
+from sqlalchemy import String, Text, Float, Integer, Boolean, Enum, DateTime, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 from db.database import Base
 
@@ -44,15 +44,17 @@ class TranscriptionJob(Base):
     duration: Mapped[float | None] = mapped_column(Float, nullable=True)
     thumbnail_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     video_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    audio_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
     # Transcription settings
-    start_time: Mapped[float | None] = mapped_column(Float, nullable=True)  # seconds
-    end_time: Mapped[float | None] = mapped_column(Float, nullable=True)    # seconds
-    language: Mapped[str] = mapped_column(String(10), default="hi")         # Default Hindi
-    split_duration: Mapped[int | None] = mapped_column(Integer, nullable=True)  # seconds, for chunking
-    prompt: Mapped[str | None] = mapped_column(Text, nullable=True)         # Whisper prompt for context priming
-    context_hint: Mapped[str | None] = mapped_column(Text, nullable=True)   # Hint for LLM post-correction
+    start_time: Mapped[float | None] = mapped_column(Float, nullable=True)
+    end_time: Mapped[float | None] = mapped_column(Float, nullable=True)
+    language: Mapped[str] = mapped_column(String(10), default="hi")
+    split_duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prompt: Mapped[str | None] = mapped_column(Text, nullable=True)  # Context for Whisper + LLM
+
+    # Pipeline options
+    llm_cleanup: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    generate_mindmap: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
 
     # Results
     transcription: Mapped[str | None] = mapped_column(Text, nullable=True)

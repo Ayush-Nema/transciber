@@ -16,8 +16,9 @@ export default function App() {
   const [startTime, setStartTime] = useState(null);
   const [endTime, setEndTime] = useState(null);
   const [splitDuration, setSplitDuration] = useState('');
-  const [prompt, setPrompt] = useState('');
-  const [contextHint, setContextHint] = useState('');
+  const [context, setContext] = useState('');
+  const [llmCleanup, setLlmCleanup] = useState(true);
+  const [generateMindmap, setGenerateMindmap] = useState(true);
 
   const [currentJob, setCurrentJob] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -104,8 +105,9 @@ export default function App() {
         start_time: startTime,
         end_time: endTime,
         split_duration: splitDuration ? parseInt(splitDuration) : null,
-        prompt: prompt.trim() || null,
-        context_hint: contextHint.trim() || null,
+        context: context.trim() || null,
+        llm_cleanup: llmCleanup,
+        generate_mindmap: generateMindmap,
       };
 
       const job = await api.createJob(jobData);
@@ -169,7 +171,6 @@ export default function App() {
             <select value={asrProvider} onChange={(e) => setAsrProvider(e.target.value)}>
               <option value="openai">OpenAI Whisper API</option>
               <option value="docker">faster-whisper (Docker)</option>
-              <option value="huggingface">HuggingFace API</option>
             </select>
           </div>
           <div className="option-group">
@@ -202,30 +203,27 @@ export default function App() {
           </div>
         </div>
 
-        {/* Prompt & Context */}
-        <div style={{ marginTop: 16, display: 'flex', gap: 12 }}>
+        {/* Context & Options */}
+        <div style={{ marginTop: 16, display: 'flex', gap: 12, alignItems: 'flex-end' }}>
           <div className="option-group" style={{ flex: 1 }}>
-            <label>Whisper Prompt (optional)</label>
+            <label>Context (optional)</label>
             <input
               type="text"
               className="url-input"
-              placeholder="e.g. Hindi news discussion about Union Budget, GST, fiscal deficit..."
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="e.g. Hindi news about Union Budget, Cricket commentary, Tech tutorial..."
+              value={context}
+              onChange={(e) => setContext(e.target.value)}
               style={{ fontSize: '0.9rem', padding: '8px 12px' }}
             />
           </div>
-          <div className="option-group" style={{ flex: 1 }}>
-            <label>Topic Hint for LLM cleanup (optional)</label>
-            <input
-              type="text"
-              className="url-input"
-              placeholder="e.g. Cricket commentary, Bollywood movie review, Tech tutorial..."
-              value={contextHint}
-              onChange={(e) => setContextHint(e.target.value)}
-              style={{ fontSize: '0.9rem', padding: '8px 12px' }}
-            />
-          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', paddingBottom: 4 }}>
+            <input type="checkbox" checked={llmCleanup} onChange={(e) => setLlmCleanup(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
+            LLM Cleanup
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', paddingBottom: 4 }}>
+            <input type="checkbox" checked={generateMindmap} onChange={(e) => setGenerateMindmap(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
+            Mind Map
+          </label>
         </div>
       </section>
 

@@ -1,4 +1,5 @@
 """Orchestrates the full transcription pipeline."""
+import asyncio
 import traceback
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from services.video_service import download_video, extract_audio, preprocess_aud
 from services.subtitle_extractor import extract_subtitles
 from services.mindmap_service import generate_mindmap_from_segments, generate_mindmap_from_text
 from services.sse_manager import sse_manager
-from services import asr_openai, asr_docker, asr_huggingface
+from services import asr_openai, asr_docker
 from services.llm_postprocess import postprocess_transcription, postprocess_segments
 
 
@@ -33,6 +34,18 @@ async def _publish_progress(job_id: str, progress: float, message: str, status: 
     })
 
 
+async def _download_video_background(url, job_id, expected_duration, db, job):
+    """Download video in the background; update job on completion."""
+    try:
+        video_path = await download_video(url, job_id, expected_duration=expected_duration)
+        await _update_job(db, job, video_path=str(video_path))
+        logger.info(f"Background video download complete for job {job_id}")
+        return video_path
+    except Exception as e:
+        logger.warning(f"Background video download failed for {job_id}: {e}")
+        return None
+
+
 async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
     """Run the full transcription pipeline for a job."""
     job_id = job.id
@@ -46,7 +59,7 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
             await _publish_progress(job_id, 0, "Checking for YouTube subtitles...", "downloading")
 
             async def on_sub_progress(pct, msg):
-                scaled = pct * 0.15  # Subtitle check is 0-15%
+                scaled = pct * 0.15
                 await _update_job(db, job, progress=scaled, progress_message=msg)
                 await _publish_progress(job_id, scaled, msg, "downloading")
 
@@ -69,23 +82,35 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
                 )
 
         # ── Step 1: Download Video ──
-        await _update_job(db, job, status=JobStatus.DOWNLOADING, progress=0.0 if not subtitle_result else 15.0,
-                          progress_message="Starting download...")
-        await _publish_progress(job_id, 15 if subtitle_result else 0, "Starting video download...", "downloading")
+        # On subtitle path: download concurrently (non-blocking)
+        # On ASR path: download and wait (we need the audio)
+        download_task = None
+        video_path = None
 
-        async def on_download_progress(pct, msg):
-            scaled = pct * 0.3  # Download is 0-30% of total
-            await _update_job(db, job, progress=scaled, progress_message=msg)
-            await _publish_progress(job_id, scaled, msg, "downloading")
+        if subtitle_result:
+            # Fire-and-forget download for video player / MP3
+            download_task = asyncio.create_task(
+                _download_video_background(job.url, job_id, job.duration, db, job)
+            )
+            await _publish_progress(job_id, 30, "Downloading video in background...", "downloading")
+        else:
+            await _update_job(db, job, status=JobStatus.DOWNLOADING, progress=0.0,
+                              progress_message="Starting download...")
+            await _publish_progress(job_id, 0, "Starting video download...", "downloading")
 
-        video_path = await download_video(
-            job.url, job_id,
-            expected_duration=job.duration,
-            on_progress=on_download_progress,
-        )
-        await _update_job(db, job, video_path=str(video_path), progress=30.0,
-                          progress_message="Download complete.")
-        await _publish_progress(job_id, 30, "Download complete.", "downloading")
+            async def on_download_progress(pct, msg):
+                scaled = pct * 0.3
+                await _update_job(db, job, progress=scaled, progress_message=msg)
+                await _publish_progress(job_id, scaled, msg, "downloading")
+
+            video_path = await download_video(
+                job.url, job_id,
+                expected_duration=job.duration,
+                on_progress=on_download_progress,
+            )
+            await _update_job(db, job, video_path=str(video_path), progress=30.0,
+                              progress_message="Download complete.")
+            await _publish_progress(job_id, 30, "Download complete.", "downloading")
 
         # ── Step 2: Extract Audio (skip if using subtitles) ──
         audio_path = None
@@ -95,7 +120,7 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
             await _publish_progress(job_id, 30, "Extracting audio...", "extracting_audio")
 
             async def on_extract_progress(pct, msg):
-                scaled = 30 + pct * 0.1  # Extract is 30-40%
+                scaled = 30 + pct * 0.1
                 await _update_job(db, job, progress=scaled, progress_message=msg)
                 await _publish_progress(job_id, scaled, msg, "extracting_audio")
 
@@ -109,14 +134,13 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
             raw_dur = await probe_duration(raw_audio_path)
             logger.debug(f"Job {job_id} — extracted audio duration: {raw_dur}s")
 
-            # Preprocess Audio (normalization)
             await _publish_progress(job_id, 35, "Preprocessing audio...", "extracting_audio")
             audio_path = await preprocess_audio(raw_audio_path, job_id, on_progress=on_extract_progress)
 
             proc_dur = await probe_duration(audio_path)
             logger.debug(f"Job {job_id} — preprocessed audio duration: {proc_dur}s")
 
-            await _update_job(db, job, audio_path=str(audio_path), progress=40.0,
+            await _update_job(db, job, progress=40.0,
                               progress_message="Audio extracted and preprocessed.")
             await _publish_progress(job_id, 40, "Audio ready.", "extracting_audio")
         else:
@@ -128,7 +152,6 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
         await _publish_progress(job_id, 40, "Starting transcription...", "transcribing")
 
         if subtitle_result:
-            # Fast path: use pre-extracted subtitles
             transcription_text = subtitle_result.get("text", "")
             segments = subtitle_result.get("segments", [])
             source_label = "manual subtitles" if subtitle_result.get("source") == "manual" else "auto-captions"
@@ -138,70 +161,58 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
                 "transcribing",
             )
         else:
-            # Standard ASR path
             async def on_transcribe_progress(pct, msg):
-                scaled = 40 + pct * 0.45  # Transcribe is 40-85%
+                scaled = 40 + pct * 0.45
                 await _update_job(db, job, progress=scaled, progress_message=msg)
                 await _publish_progress(job_id, scaled, msg, "transcribing")
 
-            # Choose ASR provider
-            if job.asr_provider == ASRProvider.OPENAI:
-                asr_module = asr_openai
-            elif job.asr_provider == ASRProvider.DOCKER:
-                asr_module = asr_docker
-            else:
-                asr_module = asr_huggingface
+            asr_module = asr_openai if job.asr_provider == ASRProvider.OPENAI else asr_docker
 
-            # Build kwargs — only OpenAI supports prompt; others ignore it
             transcribe_kwargs = {"language": job.language, "on_progress": on_transcribe_progress}
             if job.asr_provider == ASRProvider.OPENAI and job.prompt:
                 transcribe_kwargs["prompt"] = job.prompt
 
-            # Handle chunked transcription for long videos
             if job.split_duration and job.split_duration > 0:
                 chunks = await split_audio(audio_path, job_id, job.split_duration)
                 await _publish_progress(job_id, 42, f"Split into {len(chunks)} chunks.", "transcribing")
-                result = await asr_module.transcribe_audio_chunked(
-                    chunks, **transcribe_kwargs
-                )
+                result = await asr_module.transcribe_audio_chunked(chunks, **transcribe_kwargs)
             else:
-                result = await asr_module.transcribe_audio(
-                    audio_path, **transcribe_kwargs
-                )
+                result = await asr_module.transcribe_audio(audio_path, **transcribe_kwargs)
 
             transcription_text = result.get("text", "")
             segments = result.get("segments", [])
 
         logger.debug(f"Job {job_id} — RAW ASR text (first 500 chars): {transcription_text[:500]!r}")
 
-        await _update_job(db, job, progress=78.0,
-                          progress_message="Raw transcription done, cleaning up...")
-        await _publish_progress(job_id, 78, "Raw transcription done, cleaning up with LLM...", "transcribing")
+        # ── Step 3b: LLM Post-Correction (optional) ──
+        if job.llm_cleanup:
+            await _update_job(db, job, progress=78.0,
+                              progress_message="Cleaning up with LLM...")
+            await _publish_progress(job_id, 78, "Cleaning up transcription with LLM...", "transcribing")
 
-        # ── Step 3b: LLM Post-Correction ──
-        async def on_postprocess_progress(pct, msg):
-            scaled = 78 + pct * 0.07  # Post-processing is 78-85%
-            await _update_job(db, job, progress=scaled, progress_message=msg)
-            await _publish_progress(job_id, scaled, msg, "transcribing")
+            async def on_postprocess_progress(pct, msg):
+                scaled = 78 + pct * 0.07
+                await _update_job(db, job, progress=scaled, progress_message=msg)
+                await _publish_progress(job_id, scaled, msg, "transcribing")
 
-        context = job.context_hint or job.prompt or ""
-        raw_text_before_llm = transcription_text
-        transcription_text = await postprocess_transcription(
-            transcription_text, language=job.language, context_hint=context,
-            on_progress=on_postprocess_progress,
-        )
-
-        if raw_text_before_llm[:100] != transcription_text[:100]:
-            logger.debug(
-                f"Job {job_id} — LLM changed the beginning:\n"
-                f"  BEFORE: {raw_text_before_llm[:200]!r}\n"
-                f"  AFTER:  {transcription_text[:200]!r}"
-            )
-        if segments:
-            segments = await postprocess_segments(
-                segments, language=job.language, context_hint=context,
+            context = job.prompt or ""
+            raw_text_before_llm = transcription_text
+            transcription_text = await postprocess_transcription(
+                transcription_text, language=job.language, context_hint=context,
                 on_progress=on_postprocess_progress,
             )
+
+            if raw_text_before_llm[:100] != transcription_text[:100]:
+                logger.debug(
+                    f"Job {job_id} — LLM changed the beginning:\n"
+                    f"  BEFORE: {raw_text_before_llm[:200]!r}\n"
+                    f"  AFTER:  {transcription_text[:200]!r}"
+                )
+            if segments:
+                segments = await postprocess_segments(
+                    segments, language=job.language, context_hint=context,
+                    on_progress=on_postprocess_progress,
+                )
 
         await _update_job(db, job,
                           transcription=transcription_text,
@@ -210,29 +221,36 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
                           progress_message="Transcription complete.")
         await _publish_progress(job_id, 85, "Transcription complete.", "transcribing")
 
-        # ── Step 4: Generate Mind-Map ──
-        await _update_job(db, job, status=JobStatus.GENERATING_MINDMAP,
-                          progress_message="Generating mind-map...")
-        await _publish_progress(job_id, 85, "Generating mind-map...", "generating_mindmap")
+        # ── Step 4: Generate Mind-Map (optional) ──
+        mindmap = None
+        if job.generate_mindmap:
+            await _update_job(db, job, status=JobStatus.GENERATING_MINDMAP,
+                              progress_message="Generating mind-map...")
+            await _publish_progress(job_id, 85, "Generating mind-map...", "generating_mindmap")
 
-        title = job.title or "Transcription"
-        mm_context = job.context_hint or job.prompt or ""
+            title = job.title or "Transcription"
+            mm_context = job.prompt or ""
 
-        async def on_mindmap_progress(pct, msg):
-            scaled = 85 + pct * 0.15  # Mind-map is 85-100%
-            await _update_job(db, job, progress=scaled, progress_message=msg)
-            await _publish_progress(job_id, scaled, msg, "generating_mindmap")
+            async def on_mindmap_progress(pct, msg):
+                scaled = 85 + pct * 0.13
+                await _update_job(db, job, progress=scaled, progress_message=msg)
+                await _publish_progress(job_id, scaled, msg, "generating_mindmap")
 
-        if segments:
-            mindmap = await generate_mindmap_from_segments(
-                segments, title, language=job.language,
-                context_hint=mm_context, on_progress=on_mindmap_progress,
-            )
-        else:
-            mindmap = await generate_mindmap_from_text(
-                transcription_text, title, language=job.language,
-                context_hint=mm_context, on_progress=on_mindmap_progress,
-            )
+            if segments:
+                mindmap = await generate_mindmap_from_segments(
+                    segments, title, language=job.language,
+                    context_hint=mm_context, on_progress=on_mindmap_progress,
+                )
+            else:
+                mindmap = await generate_mindmap_from_text(
+                    transcription_text, title, language=job.language,
+                    context_hint=mm_context, on_progress=on_mindmap_progress,
+                )
+
+        # ── Step 5: Await background download if still running ──
+        if download_task:
+            await _publish_progress(job_id, 98, "Waiting for video download...", "progress")
+            video_path = await download_task
 
         await _update_job(db, job,
                           mindmap_mermaid=mindmap,
