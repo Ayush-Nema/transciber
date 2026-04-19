@@ -159,30 +159,25 @@ async def stream_job_progress(job_id: str, db: AsyncSession = Depends(get_db)):
 
 
 def _job_to_response(job: TranscriptionJob) -> JobResponse:
-    # Ensure segments is a list (older jobs might have stored it differently)
-    segments = job.segments
-    if segments is not None and not isinstance(segments, list):
-        segments = list(segments) if hasattr(segments, '__iter__') else None
-
     return JobResponse(
         id=job.id,
         url=job.url,
-        platform=job.platform.value if job.platform else "youtube",
-        asr_provider=job.asr_provider.value if job.asr_provider else "openai",
-        status=job.status.value if job.status else "failed",
-        progress=job.progress or 0.0,
-        progress_message=job.progress_message or "",
+        platform=job.platform.value,
+        asr_provider=job.asr_provider.value,
+        status=job.status.value,
+        progress=job.progress,
+        progress_message=job.progress_message,
         title=job.title,
         duration=job.duration,
         thumbnail_url=job.thumbnail_url,
         video_path=job.video_path,
-        language=job.language or "hi",
+        language=job.language,
         start_time=job.start_time,
         end_time=job.end_time,
         split_duration=job.split_duration,
         transcription=job.transcription,
-        segments=segments,
-        mindmap_mermaid=getattr(job, 'mindmap_mermaid', None),
+        segments=job.segments if isinstance(job.segments, list) else None,
+        mindmap_mermaid=job.mindmap_mermaid,
         error_message=job.error_message,
         created_at=job.created_at.isoformat() if job.created_at else None,
     )

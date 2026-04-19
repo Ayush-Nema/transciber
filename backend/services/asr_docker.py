@@ -6,6 +6,7 @@ import httpx
 from loguru import logger
 
 from config import ASR_DOCKER_URL
+from services.asr_utils import transcribe_chunked
 
 TIMEOUT = httpx.Timeout(timeout=600.0, connect=30.0)
 
@@ -50,34 +51,7 @@ async def transcribe_audio_chunked(
     on_progress: Callable[[float, str], Awaitable[None]] | None = None,
 ) -> dict:
     """Transcribe multiple audio chunks and merge results."""
-    all_text = []
-    all_segments = []
-    time_offset = 0.0
-
-    for i, chunk_path in enumerate(audio_chunks):
-        pct = (i / len(audio_chunks)) * 100
-        if on_progress:
-            await on_progress(pct, f"Transcribing chunk {i+1}/{len(audio_chunks)}...")
-
-        result = await transcribe_audio(chunk_path, language=language)
-        all_text.append(result.get("text", ""))
-
-        for seg in result.get("segments", []):
-            all_segments.append({
-                "start": seg["start"] + time_offset,
-                "end": seg["end"] + time_offset,
-                "text": seg["text"],
-            })
-
-        # Get chunk duration from last segment
-        if result.get("segments"):
-            time_offset += result["segments"][-1]["end"]
-
-    if on_progress:
-        await on_progress(100, "All chunks transcribed.")
-
-    return {
-        "text": " ".join(all_text),
-        "segments": all_segments,
-        "language": language,
-    }
+    return await transcribe_chunked(
+        transcribe_audio, audio_chunks, "faster-whisper",
+        language=language, on_progress=on_progress,
+    )

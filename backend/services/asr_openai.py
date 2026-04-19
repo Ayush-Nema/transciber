@@ -7,6 +7,7 @@ import httpx
 from loguru import logger
 
 from config import OPENAI_API_KEY, OPENAI_TRANSCRIPTION_MODEL
+from services.asr_utils import transcribe_chunked
 
 OPENAI_TRANSCRIPTION_URL = "https://api.openai.com/v1/audio/transcriptions"
 TIMEOUT = httpx.Timeout(timeout=600.0, connect=30.0)
@@ -117,34 +118,8 @@ async def transcribe_audio_chunked(
     on_progress: Callable[[float, str], Awaitable[None]] | None = None,
 ) -> dict:
     """Transcribe multiple audio chunks via OpenAI and merge results."""
-    all_text = []
-    all_segments = []
-    time_offset = 0.0
-
-    for i, chunk_path in enumerate(audio_chunks):
-        pct = (i / len(audio_chunks)) * 100
-        if on_progress:
-            await on_progress(pct, f"Transcribing chunk {i+1}/{len(audio_chunks)} via OpenAI...")
-
-        result = await transcribe_audio(chunk_path, language=language, prompt=prompt)
-        all_text.append(result.get("text", ""))
-
-        for seg in result.get("segments", []):
-            all_segments.append({
-                "start": seg["start"] + time_offset,
-                "end": seg["end"] + time_offset,
-                "text": seg["text"],
-            })
-
-        # Advance offset by last segment end
-        if result.get("segments"):
-            time_offset += result["segments"][-1]["end"]
-
-    if on_progress:
-        await on_progress(100, "All chunks transcribed via OpenAI.")
-
-    return {
-        "text": " ".join(all_text),
-        "segments": all_segments,
-        "language": language,
-    }
+    kwargs = {"prompt": prompt} if prompt else {}
+    return await transcribe_chunked(
+        transcribe_audio, audio_chunks, "OpenAI",
+        language=language, on_progress=on_progress, **kwargs,
+    )

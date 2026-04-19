@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import CopyButton from './CopyButton';
 
 /**
  * Interactive mind-map component.
@@ -18,46 +19,6 @@ const THEME_COLORS = [
   { bg: 'rgba(116, 185, 255, 0.15)', border: '#74b9ff', text: '#74b9ff' },
   { bg: 'rgba(162, 155, 254, 0.15)', border: '#a29bfe', text: '#a29bfe' },
 ];
-
-function CopyButton({ getText, label = 'Copy' }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(getText());
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      const ta = document.createElement('textarea');
-      ta.value = getText();
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  return (
-    <button
-      onClick={handleCopy}
-      style={{
-        padding: '6px 14px',
-        background: copied ? 'rgba(0,184,148,0.2)' : 'var(--bg-input)',
-        border: `1px solid ${copied ? 'var(--success)' : 'var(--border)'}`,
-        borderRadius: 8,
-        color: copied ? 'var(--success)' : 'var(--text-secondary)',
-        fontSize: '0.8rem',
-        cursor: 'pointer',
-        transition: 'all 0.2s',
-        fontWeight: 500,
-      }}
-    >
-      {copied ? 'Copied!' : label}
-    </button>
-  );
-}
 
 function ThemeCard({ theme, colorIdx, defaultExpanded }) {
   const [expanded, setExpanded] = useState(defaultExpanded);

@@ -7,6 +7,7 @@ import httpx
 from loguru import logger
 
 from config import HF_API_URL, HF_TOKEN
+from services.asr_utils import transcribe_chunked
 
 TIMEOUT = httpx.Timeout(timeout=300.0, connect=30.0)
 MAX_CHUNK_SIZE_MB = 10  # HF free tier limit
@@ -84,21 +85,7 @@ async def transcribe_audio_chunked(
     on_progress: Callable[[float, str], Awaitable[None]] | None = None,
 ) -> dict:
     """Transcribe multiple audio chunks via HF and merge results."""
-    all_text = []
-
-    for i, chunk_path in enumerate(audio_chunks):
-        pct = (i / len(audio_chunks)) * 100
-        if on_progress:
-            await on_progress(pct, f"Transcribing chunk {i+1}/{len(audio_chunks)} via HuggingFace...")
-
-        result = await transcribe_audio(chunk_path, language=language)
-        all_text.append(result.get("text", ""))
-
-    if on_progress:
-        await on_progress(100, "All chunks transcribed via HuggingFace.")
-
-    return {
-        "text": " ".join(all_text),
-        "segments": [],
-        "language": language,
-    }
+    return await transcribe_chunked(
+        transcribe_audio, audio_chunks, "HuggingFace",
+        language=language, on_progress=on_progress,
+    )

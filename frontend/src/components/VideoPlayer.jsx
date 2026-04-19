@@ -1,8 +1,7 @@
-import React, { useRef, useEffect, useImperativeHandle, forwardRef, useState } from 'react';
+import React, { useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
 
 const VideoPlayer = forwardRef(({ src, thumbnail, onTimeUpdate }, ref) => {
   const videoRef = useRef(null);
-  const [isLoaded, setIsLoaded] = useState(false);
 
   useImperativeHandle(ref, () => ({
     seekTo: (time) => {
@@ -10,10 +9,6 @@ const VideoPlayer = forwardRef(({ src, thumbnail, onTimeUpdate }, ref) => {
         videoRef.current.currentTime = time;
       }
     },
-    getCurrentTime: () => videoRef.current?.currentTime || 0,
-    getDuration: () => videoRef.current?.duration || 0,
-    play: () => videoRef.current?.play(),
-    pause: () => videoRef.current?.pause(),
   }));
 
   useEffect(() => {
@@ -47,7 +42,6 @@ const VideoPlayer = forwardRef(({ src, thumbnail, onTimeUpdate }, ref) => {
         src={src}
         controls
         preload="metadata"
-        onLoadedData={() => setIsLoaded(true)}
         style={{ background: '#000' }}
       />
     </div>

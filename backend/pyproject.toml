@@ -14,5 +14,4 @@ dependencies = [
     "pydantic>=2.10.3",
     "python-multipart>=0.0.19",
     "aiofiles>=24.1.0",
-    "ffmpeg-python>=0.2.0",
 ]

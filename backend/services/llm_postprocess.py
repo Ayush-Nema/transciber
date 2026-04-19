@@ -1,10 +1,11 @@
 """LLM post-correction of transcription using GPT-4o-mini."""
+import re
 from typing import Callable, Awaitable
 
 import httpx
 from loguru import logger
 
-from config import OPENAI_API_KEY
+from config import OPENAI_API_KEY, openai_headers
 
 OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 TIMEOUT = httpx.Timeout(timeout=120.0, connect=30.0)
@@ -63,28 +64,19 @@ async def postprocess_transcription(
 
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
         response = await client.post(
-            OPENAI_CHAT_URL,
-            json=payload,
-            headers={
-                "Authorization": f"Bearer {OPENAI_API_KEY}",
-                "Content-Type": "application/json",
-            },
+            OPENAI_CHAT_URL, json=payload, headers=openai_headers(),
         )
 
     if response.status_code != 200:
         logger.error(f"LLM post-processing failed ({response.status_code}): {response.text}")
-        return raw_text  # Fallback to raw text on error
+        return raw_text
 
     result = response.json()
     choice = result["choices"][0]
     corrected = choice["message"]["content"].strip()
 
-    # If LLM output was truncated, fall back to raw text to avoid losing content
     if choice.get("finish_reason") == "length":
-        logger.warning(
-            "LLM post-processing output was truncated (finish_reason=length). "
-            "Using raw transcription to avoid content loss."
-        )
+        logger.warning("LLM post-processing truncated (finish_reason=length), using raw text.")
         return raw_text
 
     if on_progress:
@@ -147,12 +139,7 @@ async def postprocess_segments(
         try:
             async with httpx.AsyncClient(timeout=TIMEOUT) as client:
                 response = await client.post(
-                    OPENAI_CHAT_URL,
-                    json=payload,
-                    headers={
-                        "Authorization": f"Bearer {OPENAI_API_KEY}",
-                        "Content-Type": "application/json",
-                    },
+                    OPENAI_CHAT_URL, json=payload, headers=openai_headers(),
                 )
 
             if response.status_code == 200:
@@ -166,7 +153,6 @@ async def postprocess_segments(
                     if not line:
                         continue
                     # Strip leading number + dot/parenthesis
-                    import re
                     cleaned = re.sub(r'^\d+[\.\)]\s*', '', line)
                     if cleaned:
                         corrected_lines.append(cleaned)

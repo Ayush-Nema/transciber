@@ -1,52 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../hooks/useApi';
+import CopyButton from './CopyButton';
 
 function formatTime(seconds) {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-}
-
-function CopyButton({ getText }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(getText());
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      const ta = document.createElement('textarea');
-      ta.value = getText();
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  return (
-    <button
-      onClick={handleCopy}
-      title="Copy transcription to clipboard"
-      style={{
-        padding: '5px 12px',
-        background: copied ? 'rgba(0,184,148,0.2)' : 'var(--bg-input)',
-        border: `1px solid ${copied ? 'var(--success)' : 'var(--border)'}`,
-        borderRadius: 8,
-        color: copied ? 'var(--success)' : 'var(--text-secondary)',
-        fontSize: '0.8rem',
-        cursor: 'pointer',
-        transition: 'all 0.2s',
-        fontWeight: 500,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {copied ? 'Copied!' : 'Copy Text'}
-    </button>
-  );
 }
 
 function DownloadMp3Button({ jobId }) {

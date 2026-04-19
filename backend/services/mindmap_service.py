@@ -7,7 +7,7 @@ from typing import Callable, Awaitable
 import httpx
 from loguru import logger
 
-from config import OPENAI_API_KEY
+from config import OPENAI_API_KEY, openai_headers
 
 OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 TIMEOUT = httpx.Timeout(timeout=120.0, connect=30.0)
@@ -85,12 +85,7 @@ async def generate_mindmap_llm(
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             response = await client.post(
-                OPENAI_CHAT_URL,
-                json=payload,
-                headers={
-                    "Authorization": f"Bearer {OPENAI_API_KEY}",
-                    "Content-Type": "application/json",
-                },
+                OPENAI_CHAT_URL, json=payload, headers=openai_headers(),
             )
 
         if response.status_code != 200:

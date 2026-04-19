@@ -107,14 +107,14 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
             )
 
             raw_dur = await probe_duration(raw_audio_path)
-            logger.info(f"[DEBUG] Job {job_id} — extracted audio duration: {raw_dur}s")
+            logger.debug(f"Job {job_id} — extracted audio duration: {raw_dur}s")
 
             # Preprocess Audio (normalization)
             await _publish_progress(job_id, 35, "Preprocessing audio...", "extracting_audio")
             audio_path = await preprocess_audio(raw_audio_path, job_id, on_progress=on_extract_progress)
 
             proc_dur = await probe_duration(audio_path)
-            logger.info(f"[DEBUG] Job {job_id} — preprocessed audio duration: {proc_dur}s")
+            logger.debug(f"Job {job_id} — preprocessed audio duration: {proc_dur}s")
 
             await _update_job(db, job, audio_path=str(audio_path), progress=40.0,
                               progress_message="Audio extracted and preprocessed.")
@@ -172,11 +172,7 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
             transcription_text = result.get("text", "")
             segments = result.get("segments", [])
 
-        # Log raw ASR output for debugging (first 500 chars)
-        logger.info(
-            f"[DEBUG] Job {job_id} — RAW ASR text (first 500 chars): "
-            f"{transcription_text[:500]!r}"
-        )
+        logger.debug(f"Job {job_id} — RAW ASR text (first 500 chars): {transcription_text[:500]!r}")
 
         await _update_job(db, job, progress=78.0,
                           progress_message="Raw transcription done, cleaning up...")
@@ -195,10 +191,9 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
             on_progress=on_postprocess_progress,
         )
 
-        # Log if LLM changed the beginning
         if raw_text_before_llm[:100] != transcription_text[:100]:
-            logger.warning(
-                f"[DEBUG] Job {job_id} — LLM changed the beginning!\n"
+            logger.debug(
+                f"Job {job_id} — LLM changed the beginning:\n"
                 f"  BEFORE: {raw_text_before_llm[:200]!r}\n"
                 f"  AFTER:  {transcription_text[:200]!r}"
             )

@@ -28,3 +28,11 @@ HF_TOKEN = os.getenv("HF_TOKEN", "")  # Optional, for higher rate limits
 # Video settings
 MAX_VIDEO_DURATION_SECONDS = 3 * 3600  # 3 hours max
 DEFAULT_SPLIT_DURATION_SECONDS = 600    # 10 minutes default split
+
+
+def openai_headers() -> dict:
+    """Common Authorization headers for OpenAI API calls."""
+    return {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json",
+    }

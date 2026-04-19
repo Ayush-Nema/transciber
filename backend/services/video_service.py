@@ -138,20 +138,8 @@ async def download_video(
     downloaded_path = video_files[0]
 
     # Verify downloaded duration matches expected
-    try:
-        probe_cmd = [
-            "ffprobe", "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            str(downloaded_path),
-        ]
-        proc = await asyncio.create_subprocess_exec(
-            *probe_cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, _ = await proc.communicate()
-        actual_duration = float(stdout.decode().strip())
+    actual_duration = await probe_duration(downloaded_path)
+    if actual_duration:
         logger.info(f"Downloaded video duration: {actual_duration:.1f}s for job {job_id}")
         if expected_duration and actual_duration < expected_duration * 0.8:
             logger.warning(
@@ -159,8 +147,6 @@ async def download_video(
                 f"expected ({expected_duration:.1f}s) for job {job_id}. "
                 "Instagram may have served a truncated version."
             )
-    except Exception as e:
-        logger.warning(f"Could not verify video duration for {job_id}: {e}")
 
     return downloaded_path
 
@@ -353,20 +339,9 @@ async def split_audio(
     split_duration_seconds: int,
 ) -> list[Path]:
     """Split an audio file into chunks of given duration."""
-    # Get total duration
-    probe_cmd = [
-        "ffprobe", "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1",
-        str(audio_path),
-    ]
-    process = await asyncio.create_subprocess_exec(
-        *probe_cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, _ = await process.communicate()
-    total_duration = float(stdout.decode().strip())
+    total_duration = await probe_duration(audio_path)
+    if not total_duration:
+        raise RuntimeError(f"Could not determine duration for {audio_path}")
 
     chunks = []
     start = 0.0

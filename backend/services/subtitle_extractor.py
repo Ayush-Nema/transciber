@@ -275,46 +275,27 @@ async def extract_subtitles(
     manual = sub_info["manual_subtitles"]
     auto = sub_info["auto_captions"]
 
-    # Determine which subtitle track to use (priority order)
-    selected_lang = None
-    source_type = None
-    sub_list = None
+    # Language code variants (yt-dlp uses different codes sometimes)
+    LANG_VARIANTS = {
+        "hi": ["hi", "hin"],
+        "en": ["en", "en-US", "en-GB", "eng"],
+    }
 
-    # Map common language codes (yt-dlp uses different codes sometimes)
-    lang_variants = [language]
-    if language == "hi":
-        lang_variants.extend(["hi", "hin"])
-    elif language == "en":
-        lang_variants.extend(["en", "en-US", "en-GB", "eng"])
-
-    for lang_code in lang_variants:
-        if lang_code in manual:
-            selected_lang = lang_code
-            source_type = "manual"
-            sub_list = manual[lang_code]
-            break
-
-    if not selected_lang:
-        for lang_code in lang_variants:
+    def _find_subs(lang_codes):
+        """Search manual then auto subs for first matching language code."""
+        for lang_code in lang_codes:
+            if lang_code in manual:
+                return lang_code, "manual", manual[lang_code]
             if lang_code in auto:
-                selected_lang = lang_code
-                source_type = "auto_caption"
-                sub_list = auto[lang_code]
-                break
+                return lang_code, "auto_caption", auto[lang_code]
+        return None, None, None
+
+    variants = LANG_VARIANTS.get(language, [language])
+    selected_lang, source_type, sub_list = _find_subs(variants)
 
     # Fallback to English if requested language not found
     if not selected_lang and language != "en":
-        for lang_code in ["en", "en-US", "en-GB"]:
-            if lang_code in manual:
-                selected_lang = lang_code
-                source_type = "manual"
-                sub_list = manual[lang_code]
-                break
-            if lang_code in auto:
-                selected_lang = lang_code
-                source_type = "auto_caption"
-                sub_list = auto[lang_code]
-                break
+        selected_lang, source_type, sub_list = _find_subs(LANG_VARIANTS["en"])
 
     if not selected_lang or not sub_list:
         if on_progress:
