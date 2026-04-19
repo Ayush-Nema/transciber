@@ -12,6 +12,9 @@ backend/data/
 .env
 *.env.local
 
+# Logs
+backend/logs/
+
 # Build
 frontend/dist/
 *.egg-info/

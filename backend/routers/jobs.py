@@ -1,19 +1,17 @@
 """API routes for transcription jobs."""
 import asyncio
-import logging
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
+from loguru import logger
 
 from db.database import get_db, async_session
 from models.job import TranscriptionJob, JobStatus, ASRProvider, Platform
 from services.video_service import detect_platform, fetch_video_info
 from services.sse_manager import sse_manager
 from services.transcription_orchestrator import run_transcription_pipeline
-
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 

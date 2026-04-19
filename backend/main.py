@@ -1,7 +1,9 @@
 """Video Transcriber Backend - FastAPI application."""
 import logging
+import sys
 from contextlib import asynccontextmanager
 
+from loguru import logger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -10,11 +12,43 @@ from db.database import init_db
 from routers import jobs, video
 from config import VIDEOS_DIR
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+
+# ── Loguru configuration ──
+# Remove default handler and add custom one
+logger.remove()
+logger.add(
+    sys.stderr,
+    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> [<level>{level}</level>] <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+    level="DEBUG",
+    colorize=True,
 )
-logger = logging.getLogger(__name__)
+logger.add(
+    "logs/transcriber.log",
+    rotation="10 MB",
+    retention="7 days",
+    compression="zip",
+    format="{time:YYYY-MM-DD HH:mm:ss} [{level}] {name}:{function}:{line} - {message}",
+    level="DEBUG",
+)
+
+
+# ── Intercept stdlib logging → loguru ──
+class InterceptHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord) -> None:
+        # Get corresponding Loguru level
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+        # Find caller from where originated the logged message
+        frame, depth = logging.currentframe(), 2
+        while frame and frame.f_code.co_filename == logging.__file__:
+            frame = frame.f_back
+            depth += 1
+        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+
+
+logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 
 
 @asynccontextmanager

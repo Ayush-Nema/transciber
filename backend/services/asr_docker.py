@@ -1,13 +1,11 @@
 """ASR client for the Docker-hosted faster-whisper service."""
-import logging
 from pathlib import Path
 from typing import Callable, Awaitable
 
 import httpx
+from loguru import logger
 
 from config import ASR_DOCKER_URL
-
-logger = logging.getLogger(__name__)
 
 TIMEOUT = httpx.Timeout(timeout=600.0, connect=30.0)
 

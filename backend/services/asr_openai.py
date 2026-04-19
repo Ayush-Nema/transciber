@@ -1,14 +1,12 @@
 """ASR client using OpenAI Transcription API."""
 import asyncio
-import logging
 from pathlib import Path
 from typing import Callable, Awaitable
 
 import httpx
+from loguru import logger
 
 from config import OPENAI_API_KEY, OPENAI_TRANSCRIPTION_MODEL
-
-logger = logging.getLogger(__name__)
 
 OPENAI_TRANSCRIPTION_URL = "https://api.openai.com/v1/audio/transcriptions"
 TIMEOUT = httpx.Timeout(timeout=600.0, connect=30.0)

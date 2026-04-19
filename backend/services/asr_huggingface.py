@@ -1,14 +1,12 @@
 """ASR client using HuggingFace Inference API (free tier)."""
 import asyncio
-import logging
 from pathlib import Path
 from typing import Callable, Awaitable
 
 import httpx
+from loguru import logger
 
 from config import HF_API_URL, HF_TOKEN
-
-logger = logging.getLogger(__name__)
 
 TIMEOUT = httpx.Timeout(timeout=300.0, connect=30.0)
 MAX_CHUNK_SIZE_MB = 10  # HF free tier limit

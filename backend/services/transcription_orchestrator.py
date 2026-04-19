@@ -1,7 +1,8 @@
 """Orchestrates the full transcription pipeline."""
-import logging
 import traceback
 from pathlib import Path
+
+from loguru import logger
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,8 +13,6 @@ from services.mindmap_service import generate_mindmap_from_segments, generate_mi
 from services.sse_manager import sse_manager
 from services import asr_openai, asr_docker, asr_huggingface
 from services.llm_postprocess import postprocess_transcription, postprocess_segments
-
-logger = logging.getLogger(__name__)
 
 
 async def _update_job(db: AsyncSession, job: TranscriptionJob, **kwargs):

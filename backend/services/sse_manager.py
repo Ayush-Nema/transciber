@@ -1,10 +1,9 @@
 """SSE (Server-Sent Events) manager for broadcasting progress updates."""
 import asyncio
 import json
-import logging
 from typing import AsyncGenerator
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class SSEManager:

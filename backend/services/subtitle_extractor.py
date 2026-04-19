@@ -7,16 +7,14 @@ Supports both manual captions and YouTube's auto-generated captions.
 """
 import asyncio
 import json
-import logging
 import re
 from pathlib import Path
 from typing import Callable, Awaitable
 
 import yt_dlp
+from loguru import logger
 
 from config import DATA_DIR
-
-logger = logging.getLogger(__name__)
 
 SUBS_DIR = DATA_DIR / "subs"
 SUBS_DIR.mkdir(parents=True, exist_ok=True)

@@ -1,20 +1,17 @@
 import asyncio
 import os
 import re
-import logging
+import json
 from pathlib import Path
 from typing import Callable, Awaitable
 
 import yt_dlp
+from loguru import logger
 
 from config import VIDEOS_DIR, AUDIO_DIR
 from models.job import Platform
 
-import json
-
 INSTAGRAM_COOKIES_BROWSER = os.environ.get("INSTAGRAM_COOKIES_BROWSER", "")  # e.g. "chrome", "firefox"
-
-logger = logging.getLogger(__name__)
 
 
 def _parse_loudnorm_stats(ffmpeg_stderr: str) -> dict | None:

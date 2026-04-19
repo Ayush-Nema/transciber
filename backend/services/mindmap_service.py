@@ -1,15 +1,13 @@
 """Generate structured mind-map data from transcription using GPT-4o-mini."""
 import json
 import re
-import logging
 from collections import Counter
 from typing import Callable, Awaitable
 
 import httpx
+from loguru import logger
 
 from config import OPENAI_API_KEY
-
-logger = logging.getLogger(__name__)
 
 OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 TIMEOUT = httpx.Timeout(timeout=120.0, connect=30.0)
