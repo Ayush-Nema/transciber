@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy import String, Text, Float, Integer, Boolean, Enum, DateTime, JSON
 from sqlalchemy.orm import Mapped, mapped_column
-from db.database import Base
+from backend.db.database import Base
 
 
 class JobStatus(str, enum.Enum):

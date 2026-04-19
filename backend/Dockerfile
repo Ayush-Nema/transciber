@@ -23,7 +23,7 @@ COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
-COPY . .
+COPY backend/ .
 
 RUN mkdir -p data/videos data/audio data/subs
 

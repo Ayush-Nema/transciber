@@ -7,12 +7,12 @@ from loguru import logger
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.job import TranscriptionJob, JobStatus, ASRProvider, Platform
-from services.video_service import download_video, extract_audio, preprocess_audio, split_audio, probe_duration
-from services.subtitle_extractor import extract_subtitles
-from services.sse_manager import sse_manager
-from services import asr_openai, asr_docker
-from services.llm_postprocess import postprocess_transcription, postprocess_segments
+from backend.models.job import TranscriptionJob, JobStatus, ASRProvider, Platform
+from backend.services.video_service import download_video, extract_audio, preprocess_audio, split_audio, probe_duration
+from backend.services.subtitle_extractor import extract_subtitles
+from backend.services.sse_manager import sse_manager
+from backend.services import asr_openai, asr_docker
+from backend.services.llm_postprocess import postprocess_transcription, postprocess_segments
 
 
 async def _update_job(db: AsyncSession, job: TranscriptionJob, **kwargs):

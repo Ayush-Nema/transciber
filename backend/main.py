@@ -8,13 +8,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from db.database import init_db
-from routers import jobs, video
-from config import VIDEOS_DIR
+from backend.db.database import init_db
+from backend.routers import jobs, video
+from backend.config import VIDEOS_DIR, LOG_DIR
 
 
 # ── Loguru configuration ──
-# Remove default handler and add custom one
 logger.remove()
 logger.add(
     sys.stderr,
@@ -23,7 +22,7 @@ logger.add(
     colorize=True,
 )
 logger.add(
-    "logs/transcriber.log",
+    LOG_DIR / "app.log",
     rotation="10 MB",
     retention="7 days",
     compression="zip",

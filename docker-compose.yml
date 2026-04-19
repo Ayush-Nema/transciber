@@ -13,7 +13,9 @@ services:
 
   # ── Backend (FastAPI) ──
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     ports:
       - "8000:8000"
     environment:

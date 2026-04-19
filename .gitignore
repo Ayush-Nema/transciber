@@ -13,7 +13,7 @@ backend/data/
 *.env.local
 
 # Logs
-backend/logs/
+logs/
 
 # Build
 frontend/dist/

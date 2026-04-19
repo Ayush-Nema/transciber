@@ -5,8 +5,8 @@ from typing import Callable, Awaitable
 import httpx
 from loguru import logger
 
-from config import ASR_DOCKER_URL
-from services.asr_utils import transcribe_chunked
+from backend.config import ASR_DOCKER_URL
+from backend.services.asr_utils import transcribe_chunked
 
 TIMEOUT = httpx.Timeout(timeout=600.0, connect=30.0)
 

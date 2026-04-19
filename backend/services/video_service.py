@@ -8,8 +8,8 @@ from typing import Callable, Awaitable
 import yt_dlp
 from loguru import logger
 
-from config import VIDEOS_DIR, AUDIO_DIR
-from models.job import Platform
+from backend.config import VIDEOS_DIR, AUDIO_DIR
+from backend.models.job import Platform
 
 INSTAGRAM_COOKIES_BROWSER = os.environ.get("INSTAGRAM_COOKIES_BROWSER", "")  # e.g. "chrome", "firefox"
 

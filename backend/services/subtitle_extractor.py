@@ -14,7 +14,7 @@ from typing import Callable, Awaitable
 import yt_dlp
 from loguru import logger
 
-from config import DATA_DIR
+from backend.config import DATA_DIR
 
 SUBS_DIR = DATA_DIR / "subs"
 SUBS_DIR.mkdir(parents=True, exist_ok=True)

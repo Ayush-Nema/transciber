@@ -7,11 +7,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 
-from db.database import get_db, async_session
-from models.job import TranscriptionJob, JobStatus, ASRProvider, Platform
-from services.video_service import detect_platform, fetch_video_info
-from services.sse_manager import sse_manager
-from services.transcription_orchestrator import run_transcription_pipeline
+from backend.db.database import get_db, async_session
+from backend.models.job import TranscriptionJob, JobStatus, ASRProvider, Platform
+from backend.services.video_service import detect_platform, fetch_video_info
+from backend.services.sse_manager import sse_manager
+from backend.services.transcription_orchestrator import run_transcription_pipeline
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 

@@ -6,8 +6,8 @@ from typing import Callable, Awaitable
 import httpx
 from loguru import logger
 
-from config import OPENAI_API_KEY, OPENAI_TRANSCRIPTION_MODEL
-from services.asr_utils import transcribe_chunked
+from backend.config import OPENAI_API_KEY, OPENAI_TRANSCRIPTION_MODEL
+from backend.services.asr_utils import transcribe_chunked
 
 OPENAI_TRANSCRIPTION_URL = "https://api.openai.com/v1/audio/transcriptions"
 TIMEOUT = httpx.Timeout(timeout=600.0, connect=30.0)
