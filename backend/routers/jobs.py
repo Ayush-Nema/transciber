@@ -1,21 +1,23 @@
 """API routes for transcription jobs."""
+
 import asyncio
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from loguru import logger
 
-from backend.db.database import get_db, async_session
-from backend.models.job import TranscriptionJob, JobStatus, ASRProvider, Platform
-from backend.services.video_service import detect_platform, fetch_video_info
+from backend.db.database import async_session, get_db
+from backend.models.job import ASRProvider, JobStatus, TranscriptionJob
 from backend.services.sse_manager import sse_manager
 from backend.services.transcription_orchestrator import run_transcription_pipeline
+from backend.services.video_service import detect_platform, fetch_video_info
+
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 
 # ── Request / Response Schemas ──
+
 
 class CreateJobRequest(BaseModel):
     url: str
@@ -24,7 +26,7 @@ class CreateJobRequest(BaseModel):
     start_time: float | None = Field(default=None, ge=0)
     end_time: float | None = Field(default=None, ge=0)
     split_duration: int | None = Field(default=None, ge=60, description="Split duration in seconds (min 60)")
-    context: str | None = Field(default=None, max_length=1000, description="Context hint for ASR and LLM (e.g. topic, expected vocabulary)")
+    context: str | None = Field(default=None, max_length=1000, description="Context hint for ASR and LLM")
     llm_cleanup: bool = Field(default=True, description="Run LLM post-correction on transcription")
 
 
@@ -58,6 +60,7 @@ class VideoInfoRequest(BaseModel):
 
 
 # ── Routes ──
+
 
 @router.post("/video-info")
 async def get_video_info(req: VideoInfoRequest):
@@ -139,11 +142,13 @@ async def stream_job_progress(job_id: str, db: AsyncSession = Depends(get_db)):
 
     # If already completed, return result immediately
     if job.status in (JobStatus.COMPLETED, JobStatus.FAILED):
+
         async def _immediate():
             if job.status == JobStatus.COMPLETED:
-                yield f"event: completed\ndata: {{\"job_id\": \"{job_id}\", \"message\": \"Already completed\"}}\n\n"
+                yield f'event: completed\ndata: {{"job_id": "{job_id}", "message": "Already completed"}}\n\n'
             else:
-                yield f"event: error\ndata: {{\"job_id\": \"{job_id}\", \"error\": \"{job.error_message}\"}}\n\n"
+                yield f'event: error\ndata: {{"job_id": "{job_id}", "error": "{job.error_message}"}}\n\n'
+
         return StreamingResponse(_immediate(), media_type="text/event-stream")
 
     return StreamingResponse(

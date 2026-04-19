@@ -1,18 +1,17 @@
 """Orchestrates the full transcription pipeline."""
+
 import asyncio
 import traceback
-from pathlib import Path
 
 from loguru import logger
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.models.job import TranscriptionJob, JobStatus, ASRProvider, Platform
-from backend.services.video_service import download_video, extract_audio, preprocess_audio, split_audio, probe_duration
-from backend.services.subtitle_extractor import extract_subtitles
+from backend.models.job import ASRProvider, JobStatus, Platform, TranscriptionJob
+from backend.services import asr_docker, asr_openai
+from backend.services.llm_postprocess import postprocess_segments, postprocess_transcription
 from backend.services.sse_manager import sse_manager
-from backend.services import asr_openai, asr_docker
-from backend.services.llm_postprocess import postprocess_transcription, postprocess_segments
+from backend.services.subtitle_extractor import extract_subtitles
+from backend.services.video_service import download_video, extract_audio, preprocess_audio, probe_duration, split_audio
 
 
 async def _update_job(db: AsyncSession, job: TranscriptionJob, **kwargs):
@@ -26,11 +25,15 @@ async def _update_job(db: AsyncSession, job: TranscriptionJob, **kwargs):
 
 async def _publish_progress(job_id: str, progress: float, message: str, status: str = "progress"):
     """Publish progress via SSE."""
-    await sse_manager.publish(job_id, status, {
-        "job_id": job_id,
-        "progress": round(progress, 1),
-        "message": message,
-    })
+    await sse_manager.publish(
+        job_id,
+        status,
+        {
+            "job_id": job_id,
+            "progress": round(progress, 1),
+            "message": message,
+        },
+    )
 
 
 async def _download_video_background(url, job_id, expected_duration, db, job):
@@ -53,8 +56,13 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
         # ── Step 0: Try YouTube subtitle extraction (fast path) ──
         subtitle_result = None
         if job.platform == Platform.YOUTUBE and not job.start_time and not job.end_time:
-            await _update_job(db, job, status=JobStatus.DOWNLOADING, progress=0.0,
-                              progress_message="Checking for existing subtitles...")
+            await _update_job(
+                db,
+                job,
+                status=JobStatus.DOWNLOADING,
+                progress=0.0,
+                progress_message="Checking for existing subtitles...",
+            )
             await _publish_progress(job_id, 0, "Checking for YouTube subtitles...", "downloading")
 
             async def on_sub_progress(pct, msg):
@@ -64,7 +72,10 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
 
             try:
                 subtitle_result = await extract_subtitles(
-                    job.url, job_id, language=job.language, on_progress=on_sub_progress,
+                    job.url,
+                    job_id,
+                    language=job.language,
+                    on_progress=on_sub_progress,
                 )
             except Exception as e:
                 logger.warning(f"Subtitle extraction failed for {job_id}, falling back to ASR: {e}")
@@ -75,7 +86,8 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
                 source_label = "manual subtitles" if source == "manual" else "auto-captions"
                 logger.info(f"Job {job_id}: using YouTube {source_label} (skipping ASR)")
                 await _publish_progress(
-                    job_id, 15,
+                    job_id,
+                    15,
                     f"Found YouTube {source_label}! Skipping audio transcription.",
                     "downloading",
                 )
@@ -88,13 +100,12 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
 
         if subtitle_result:
             # Fire-and-forget download for video player / MP3
-            download_task = asyncio.create_task(
-                _download_video_background(job.url, job_id, job.duration, db, job)
-            )
+            download_task = asyncio.create_task(_download_video_background(job.url, job_id, job.duration, db, job))
             await _publish_progress(job_id, 30, "Downloading video in background...", "downloading")
         else:
-            await _update_job(db, job, status=JobStatus.DOWNLOADING, progress=0.0,
-                              progress_message="Starting download...")
+            await _update_job(
+                db, job, status=JobStatus.DOWNLOADING, progress=0.0, progress_message="Starting download..."
+            )
             await _publish_progress(job_id, 0, "Starting video download...", "downloading")
 
             async def on_download_progress(pct, msg):
@@ -103,19 +114,18 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
                 await _publish_progress(job_id, scaled, msg, "downloading")
 
             video_path = await download_video(
-                job.url, job_id,
+                job.url,
+                job_id,
                 expected_duration=job.duration,
                 on_progress=on_download_progress,
             )
-            await _update_job(db, job, video_path=str(video_path), progress=30.0,
-                              progress_message="Download complete.")
+            await _update_job(db, job, video_path=str(video_path), progress=30.0, progress_message="Download complete.")
             await _publish_progress(job_id, 30, "Download complete.", "downloading")
 
         # ── Step 2: Extract Audio (skip if using subtitles) ──
         audio_path = None
         if not subtitle_result:
-            await _update_job(db, job, status=JobStatus.EXTRACTING_AUDIO,
-                              progress_message="Extracting audio...")
+            await _update_job(db, job, status=JobStatus.EXTRACTING_AUDIO, progress_message="Extracting audio...")
             await _publish_progress(job_id, 30, "Extracting audio...", "extracting_audio")
 
             async def on_extract_progress(pct, msg):
@@ -124,7 +134,8 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
                 await _publish_progress(job_id, scaled, msg, "extracting_audio")
 
             raw_audio_path = await extract_audio(
-                video_path, job_id,
+                video_path,
+                job_id,
                 start_time=job.start_time,
                 end_time=job.end_time,
                 on_progress=on_extract_progress,
@@ -139,15 +150,13 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
             proc_dur = await probe_duration(audio_path)
             logger.debug(f"Job {job_id} — preprocessed audio duration: {proc_dur}s")
 
-            await _update_job(db, job, progress=40.0,
-                              progress_message="Audio extracted and preprocessed.")
+            await _update_job(db, job, progress=40.0, progress_message="Audio extracted and preprocessed.")
             await _publish_progress(job_id, 40, "Audio ready.", "extracting_audio")
         else:
             await _publish_progress(job_id, 40, "Skipping audio extraction (using subtitles).", "extracting_audio")
 
         # ── Step 3: Transcribe (or use subtitles) ──
-        await _update_job(db, job, status=JobStatus.TRANSCRIBING,
-                          progress_message="Starting transcription...")
+        await _update_job(db, job, status=JobStatus.TRANSCRIBING, progress_message="Starting transcription...")
         await _publish_progress(job_id, 40, "Starting transcription...", "transcribing")
 
         if subtitle_result:
@@ -155,11 +164,13 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
             segments = subtitle_result.get("segments", [])
             source_label = "manual subtitles" if subtitle_result.get("source") == "manual" else "auto-captions"
             await _publish_progress(
-                job_id, 75,
+                job_id,
+                75,
                 f"Using YouTube {source_label} ({len(segments)} segments).",
                 "transcribing",
             )
         else:
+
             async def on_transcribe_progress(pct, msg):
                 scaled = 40 + pct * 0.45
                 await _update_job(db, job, progress=scaled, progress_message=msg)
@@ -185,8 +196,7 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
 
         # ── Step 3b: LLM Post-Correction (optional) ──
         if job.llm_cleanup:
-            await _update_job(db, job, progress=78.0,
-                              progress_message="Cleaning up with LLM...")
+            await _update_job(db, job, progress=78.0, progress_message="Cleaning up with LLM...")
             await _publish_progress(job_id, 78, "Cleaning up transcription with LLM...", "transcribing")
 
             async def on_postprocess_progress(pct, msg):
@@ -197,7 +207,9 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
             context = job.prompt or ""
             raw_text_before_llm = transcription_text
             transcription_text = await postprocess_transcription(
-                transcription_text, language=job.language, context_hint=context,
+                transcription_text,
+                language=job.language,
+                context_hint=context,
                 on_progress=on_postprocess_progress,
             )
 
@@ -209,15 +221,20 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
                 )
             if segments:
                 segments = await postprocess_segments(
-                    segments, language=job.language, context_hint=context,
+                    segments,
+                    language=job.language,
+                    context_hint=context,
                     on_progress=on_postprocess_progress,
                 )
 
-        await _update_job(db, job,
-                          transcription=transcription_text,
-                          segments=segments,
-                          progress=95.0,
-                          progress_message="Transcription complete.")
+        await _update_job(
+            db,
+            job,
+            transcription=transcription_text,
+            segments=segments,
+            progress=95.0,
+            progress_message="Transcription complete.",
+        )
         await _publish_progress(job_id, 95, "Transcription complete.", "transcribing")
 
         # ── Step 4: Await background download if still running ──
@@ -225,25 +242,27 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
             await _publish_progress(job_id, 98, "Waiting for video download...", "progress")
             video_path = await download_task
 
-        await _update_job(db, job,
-                          status=JobStatus.COMPLETED,
-                          progress=100.0,
-                          progress_message="All done!")
+        await _update_job(db, job, status=JobStatus.COMPLETED, progress=100.0, progress_message="All done!")
 
         await _publish_progress(job_id, 100, "Transcription complete!", "completed")
-        await sse_manager.publish(job_id, "completed", {
-            "job_id": job_id,
-            "transcription": transcription_text,
-            "segments": segments,
-        })
+        await sse_manager.publish(
+            job_id,
+            "completed",
+            {
+                "job_id": job_id,
+                "transcription": transcription_text,
+                "segments": segments,
+            },
+        )
 
     except Exception as e:
         logger.error(f"Pipeline failed for job {job_id}: {traceback.format_exc()}")
-        await _update_job(db, job,
-                          status=JobStatus.FAILED,
-                          error_message=str(e),
-                          progress_message=f"Error: {str(e)}")
-        await sse_manager.publish(job_id, "error", {
-            "job_id": job_id,
-            "error": str(e),
-        })
+        await _update_job(db, job, status=JobStatus.FAILED, error_message=str(e), progress_message=f"Error: {str(e)}")
+        await sse_manager.publish(
+            job_id,
+            "error",
+            {
+                "job_id": job_id,
+                "error": str(e),
+            },
+        )

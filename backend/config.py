@@ -24,7 +24,7 @@ ASR_DOCKER_URL = os.getenv("ASR_DOCKER_URL", "http://asr-service:8001")
 
 # Video settings
 MAX_VIDEO_DURATION_SECONDS = 3 * 3600  # 3 hours max
-DEFAULT_SPLIT_DURATION_SECONDS = 600    # 10 minutes default split
+DEFAULT_SPLIT_DURATION_SECONDS = 600  # 10 minutes default split
 
 
 def openai_headers() -> dict:

@@ -1,14 +1,13 @@
 import asyncio
-import os
-import re
 import json
+import os
 from pathlib import Path
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
 
 import yt_dlp
 from loguru import logger
 
-from backend.config import VIDEOS_DIR, AUDIO_DIR
+from backend.config import AUDIO_DIR, VIDEOS_DIR
 from backend.models.job import Platform
 
 INSTAGRAM_COOKIES_BROWSER = os.environ.get("INSTAGRAM_COOKIES_BROWSER", "")  # e.g. "chrome", "firefox"
@@ -168,13 +167,18 @@ async def extract_audio(
     if end_time is not None:
         cmd.extend(["-to", str(end_time)])
 
-    cmd.extend([
-        "-vn",                  # No video
-        "-acodec", "pcm_s16le", # WAV format
-        "-ar", "16000",         # 16kHz sample rate (required by Whisper)
-        "-ac", "1",             # Mono
-        str(audio_path),
-    ])
+    cmd.extend(
+        [
+            "-vn",  # No video
+            "-acodec",
+            "pcm_s16le",  # WAV format
+            "-ar",
+            "16000",  # 16kHz sample rate (required by Whisper)
+            "-ac",
+            "1",  # Mono
+            str(audio_path),
+        ]
+    )
 
     if on_progress:
         await on_progress(0, "Extracting audio from video...")
@@ -216,10 +220,15 @@ async def preprocess_audio(
 
     # ── Pass 1: measure loudness stats ──
     measure_cmd = [
-        "ffmpeg", "-y",
-        "-i", str(audio_path),
-        "-af", "highpass=f=80,loudnorm=I=-16:TP=-1.5:print_format=json",
-        "-f", "null", "-",
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(audio_path),
+        "-af",
+        "highpass=f=80,loudnorm=I=-16:TP=-1.5:print_format=json",
+        "-f",
+        "null",
+        "-",
     ]
 
     proc1 = await asyncio.create_subprocess_exec(
@@ -245,24 +254,36 @@ async def preprocess_audio(
             f":linear=true"
         )
         cmd = [
-            "ffmpeg", "-y",
-            "-i", str(audio_path),
-            "-af", f"highpass=f=80,{loudnorm_filter}",
-            "-acodec", "pcm_s16le",
-            "-ar", "16000",
-            "-ac", "1",
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(audio_path),
+            "-af",
+            f"highpass=f=80,{loudnorm_filter}",
+            "-acodec",
+            "pcm_s16le",
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
             str(processed_path),
         ]
     else:
         # Fallback: just highpass, skip loudnorm entirely
         logger.warning("Could not parse loudnorm stats, using highpass only")
         cmd = [
-            "ffmpeg", "-y",
-            "-i", str(audio_path),
-            "-af", "highpass=f=80",
-            "-acodec", "pcm_s16le",
-            "-ar", "16000",
-            "-ac", "1",
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(audio_path),
+            "-af",
+            "highpass=f=80",
+            "-acodec",
+            "pcm_s16le",
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
             str(processed_path),
         ]
 
@@ -291,13 +312,19 @@ async def convert_to_mp3(video_path: Path, job_id: str) -> Path:
         return mp3_path
 
     cmd = [
-        "ffmpeg", "-y",
-        "-i", str(video_path),
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(video_path),
         "-vn",
-        "-acodec", "libmp3lame",
-        "-ab", "192k",
-        "-ar", "44100",
-        "-ac", "2",
+        "-acodec",
+        "libmp3lame",
+        "-ab",
+        "192k",
+        "-ar",
+        "44100",
+        "-ac",
+        "2",
         str(mp3_path),
     ]
 
@@ -311,7 +338,7 @@ async def convert_to_mp3(video_path: Path, job_id: str) -> Path:
     if process.returncode != 0:
         raise RuntimeError(f"MP3 conversion failed: {stderr.decode()[:300]}")
 
-    logger.info(f"Converted to MP3: {mp3_path} ({mp3_path.stat().st_size / (1024*1024):.1f}MB)")
+    logger.info(f"Converted to MP3: {mp3_path} ({mp3_path.stat().st_size / (1024 * 1024):.1f}MB)")
     return mp3_path
 
 
@@ -319,13 +346,19 @@ async def probe_duration(file_path: Path) -> float | None:
     """Get duration of an audio/video file in seconds."""
     try:
         cmd = [
-            "ffprobe", "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
             str(file_path),
         ]
         proc = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
         stdout, _ = await proc.communicate()
         return float(stdout.decode().strip())
@@ -350,13 +383,20 @@ async def split_audio(
     while start < total_duration:
         chunk_path = AUDIO_DIR / f"{job_id}_chunk_{idx:03d}.wav"
         cmd = [
-            "ffmpeg", "-y",
-            "-i", str(audio_path),
-            "-ss", str(start),
-            "-t", str(split_duration_seconds),
-            "-acodec", "pcm_s16le",
-            "-ar", "16000",
-            "-ac", "1",
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(audio_path),
+            "-ss",
+            str(start),
+            "-t",
+            str(split_duration_seconds),
+            "-acodec",
+            "pcm_s16le",
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
             str(chunk_path),
         ]
         process = await asyncio.create_subprocess_exec(

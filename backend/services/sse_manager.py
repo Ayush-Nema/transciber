@@ -1,4 +1,5 @@
 """SSE (Server-Sent Events) manager for broadcasting progress updates."""
+
 import asyncio
 import json
 from typing import AsyncGenerator
@@ -61,7 +62,7 @@ class SSEManager:
 
                 except asyncio.TimeoutError:
                     # Send keepalive
-                    yield f": keepalive\n\n"
+                    yield ": keepalive\n\n"
 
         finally:
             self.unsubscribe(job_id, queue)

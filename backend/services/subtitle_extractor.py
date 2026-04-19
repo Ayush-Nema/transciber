@@ -5,11 +5,10 @@ This avoids running ASR altogether when YouTube already has subtitles,
 giving instant results with good accuracy (especially for popular languages).
 Supports both manual captions and YouTube's auto-generated captions.
 """
+
 import asyncio
-import json
 import re
-from pathlib import Path
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
 
 import yt_dlp
 from loguru import logger
@@ -47,9 +46,7 @@ def _parse_vtt_cues(vtt_text: str) -> list[dict]:
     Returns: [{"start": float, "end": float, "text": str}, ...]
     """
     cues = []
-    cue_pattern = re.compile(
-        r"(\d{1,2}:\d{2}:\d{2}[.,]\d{3})\s*-->\s*(\d{1,2}:\d{2}:\d{2}[.,]\d{3})"
-    )
+    cue_pattern = re.compile(r"(\d{1,2}:\d{2}:\d{2}[.,]\d{3})\s*-->\s*(\d{1,2}:\d{2}:\d{2}[.,]\d{3})")
 
     lines = vtt_text.split("\n")
     i = 0
@@ -68,11 +65,13 @@ def _parse_vtt_cues(vtt_text: str) -> list[dict]:
 
             text = " ".join(text_lines).strip()
             if text:
-                cues.append({
-                    "start": round(start, 2),
-                    "end": round(end, 2),
-                    "text": text,
-                })
+                cues.append(
+                    {
+                        "start": round(start, 2),
+                        "end": round(end, 2),
+                        "text": text,
+                    }
+                )
         else:
             i += 1
 
@@ -110,7 +109,7 @@ def _merge_rolling_cues(cues: list[dict], gap_threshold: float = 2.0) -> list[di
         if prev_text and cur_text != prev_text:
             # Check if current text contains the previous text as a prefix
             if cur_text.startswith(prev_text):
-                new_text = cur_text[len(prev_text):].strip()
+                new_text = cur_text[len(prev_text) :].strip()
             else:
                 # Try word-level overlap detection:
                 # Find the longest suffix of prev_text that is a prefix of cur_text
@@ -128,11 +127,13 @@ def _merge_rolling_cues(cues: list[dict], gap_threshold: float = 2.0) -> list[di
                 # else: no overlap found, keep full text as new
 
         if new_text:
-            fragments.append({
-                "start": cue["start"],
-                "end": cue["end"],
-                "text": new_text,
-            })
+            fragments.append(
+                {
+                    "start": cue["start"],
+                    "end": cue["end"],
+                    "text": new_text,
+                }
+            )
 
         prev_text = cur_text
 
@@ -157,11 +158,13 @@ def _merge_rolling_cues(cues: list[dict], gap_threshold: float = 2.0) -> list[di
             current["end"] = frag["end"]
             current["texts"].append(frag["text"])
         else:
-            merged.append({
-                "start": current["start"],
-                "end": current["end"],
-                "text": " ".join(current["texts"]).strip(),
-            })
+            merged.append(
+                {
+                    "start": current["start"],
+                    "end": current["end"],
+                    "text": " ".join(current["texts"]).strip(),
+                }
+            )
             current = {
                 "start": frag["start"],
                 "end": frag["end"],
@@ -169,11 +172,13 @@ def _merge_rolling_cues(cues: list[dict], gap_threshold: float = 2.0) -> list[di
             }
 
     # Don't forget the last segment
-    merged.append({
-        "start": current["start"],
-        "end": current["end"],
-        "text": " ".join(current["texts"]).strip(),
-    })
+    merged.append(
+        {
+            "start": current["start"],
+            "end": current["end"],
+            "text": " ".join(current["texts"]).strip(),
+        }
+    )
 
     # Filter out empty segments
     return [seg for seg in merged if seg["text"]]
@@ -357,14 +362,10 @@ async def extract_subtitles(
 
     if on_progress:
         source_label = "manual subtitles" if source_type == "manual" else "auto-captions"
-        await on_progress(
-            100,
-            f"Extracted {len(segments)} segments from YouTube {source_label} ({selected_lang})."
-        )
+        await on_progress(100, f"Extracted {len(segments)} segments from YouTube {source_label} ({selected_lang}).")
 
     logger.info(
-        f"Subtitle extraction done for job {job_id}: "
-        f"{len(segments)} segments from {source_type} ({selected_lang})"
+        f"Subtitle extraction done for job {job_id}: {len(segments)} segments from {source_type} ({selected_lang})"
     )
 
     return {

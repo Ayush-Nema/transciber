@@ -5,33 +5,31 @@ AI-powered video transcription app for YouTube, Instagram, and Facebook. Optimiz
 ## Features
 
 - **Multi-platform support** — YouTube, Instagram, Facebook (public videos, reels, shorts)
-- **Three ASR engines** — OpenAI `gpt-4o-mini-transcribe` (default), local faster-whisper (Docker), or HuggingFace Inference API
+- **Two ASR engines** — OpenAI `gpt-4o-mini-transcribe` (default) or local faster-whisper (Docker)
 - **YouTube subtitle fast-path** — Automatically extracts existing YouTube subtitles/auto-captions when available, skipping ASR entirely for faster results
-- **LLM post-correction** — GPT-4o-mini cleans up transcription errors, especially for Hindi/Hinglish content
-- **Audio preprocessing** — FFmpeg-based noise reduction and loudness normalization before transcription
+- **Optional LLM post-correction** — GPT-4o-mini cleans up transcription errors, especially for Hindi/Hinglish content (toggle on/off)
+- **Audio preprocessing** — FFmpeg-based highpass filtering and two-pass loudness normalization before transcription
 - **Real-time progress** — SSE-based live updates during every pipeline stage
-- **Video player** — Embedded HTML5 player with play/pause/seek controls
-- **Dual transcript view** — Toggle between clean paragraph view (default) and timestamped segment view with click-to-seek
+- **Video player** — Embedded HTML5 player with seek controls and transcript sync
+- **Dual transcript view** — Toggle between clean paragraph view and timestamped segment view with click-to-seek
 - **Segment selection** — Transcribe a specific time range of the video
 - **Auto-split** — Break long videos into chunks for efficient processing
-- **Mind-map** — Auto-generated Mermaid mind-map from transcription content
-- **Whisper prompt priming** — Optional prompt field to guide ASR with expected vocabulary
+- **MP3 download** — Download the video's audio as MP3
 - **Hindi-first** — Optimized for Hindi with support for Marathi, Tamil, Telugu, Bengali, Gujarati, Kannada, Punjabi, Urdu, and English
 
 ## Architecture
 
 ```
 ┌─────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Frontend   │───▶│     Backend      │───▶│  ASR Service     │
+│   Frontend   │───>│     Backend      │───>│  ASR Service     │
 │  React+Vite  │    │     FastAPI      │    │ faster-whisper   │
 │  :5173       │    │     :8000        │    │  :8001 (optional)│
 └─────────────┘    └──────┬───────────┘    └─────────────────┘
                           │
-                          ├──▶ yt-dlp (video download + subtitle extraction)
-                          ├──▶ ffmpeg (audio extraction + preprocessing)
-                          ├──▶ OpenAI API (gpt-4o-mini-transcribe + GPT-4o-mini)
-                          ├──▶ SQLite (job storage)
-                          └──▶ HuggingFace API (alt ASR)
+                          ├──> yt-dlp (video download + subtitle extraction)
+                          ├──> ffmpeg (audio extraction + preprocessing)
+                          ├──> OpenAI API (gpt-4o-mini-transcribe + GPT-4o-mini)
+                          └──> SQLite (job storage)
 ```
 
 ### Transcription Pipeline
@@ -41,19 +39,16 @@ URL → [Check YouTube subtitles] → Download video → Extract audio
                                          │
               ┌──────────────────────────┘
               ▼
-     Preprocess audio (noise reduction + normalization)
+     Preprocess audio (highpass + loudness normalization)
               │
               ▼
-     Transcribe (OpenAI / Docker / HuggingFace)
+     Transcribe (OpenAI / Docker)
               │                              OR   Use extracted subtitles
               ▼
-     LLM post-correction (GPT-4o-mini)
-              │
-              ▼
-     Generate mind-map → Done
+     LLM post-correction (optional) → Done
 ```
 
-For YouTube videos with existing subtitles, the pipeline skips audio extraction, preprocessing, and ASR entirely — jumping straight from subtitle extraction to LLM post-correction.
+For YouTube videos with existing subtitles, the pipeline skips audio extraction, preprocessing, and ASR entirely. The video download runs concurrently in the background so the transcript is returned faster.
 
 ## Quick Start
 
@@ -68,8 +63,9 @@ Create a `.env` file in the project root:
 
 ```bash
 OPENAI_API_KEY=sk-xxxxx
-HF_TOKEN=hf_xxxxx          # Optional, for HuggingFace ASR mode
 ```
+
+See `.env.example` for all available options.
 
 ### 2. Build and run
 
@@ -93,8 +89,7 @@ docker compose --profile local-asr up --build -d
 |---|---|---|
 | `OPENAI_API_KEY` | _(required)_ | OpenAI API key for transcription and LLM post-correction |
 | `OPENAI_TRANSCRIPTION_MODEL` | `gpt-4o-mini-transcribe` | Transcription model (see options below) |
-| `ASR_MODE` | `openai` | ASR backend: `openai`, `docker`, or `huggingface` |
-| `HF_TOKEN` | _(empty)_ | HuggingFace API token (optional, for HF ASR mode) |
+| `ASR_MODE` | `openai` | ASR backend: `openai` or `docker` |
 | `WHISPER_MODEL_SIZE` | `base` | faster-whisper model size when using Docker ASR |
 
 ### OpenAI Transcription Models
@@ -114,16 +109,15 @@ To change the model, set `OPENAI_TRANSCRIPTION_MODEL` in your `.env` file or in 
 1. Paste a YouTube, Instagram, or Facebook video URL
 2. Click **Fetch Info** to preview video metadata
 3. (Optional) Configure options:
-   - **ASR Engine** — OpenAI (default), Docker, or HuggingFace
+   - **ASR Engine** — OpenAI (default) or Docker (faster-whisper)
    - **Language** — Hindi (default), English, or other supported languages
    - **Time range** — Transcribe a specific portion of the video
    - **Split duration** — Break long audio into chunks (e.g., 600s)
-   - **Whisper Prompt** — Guide the model with expected vocabulary (e.g., "Hindi news discussion about GST, fiscal deficit")
-   - **Topic Hint** — Context for LLM post-correction (e.g., "Cricket commentary", "Bollywood review")
+   - **Context** — Guide both ASR and LLM with expected vocabulary (e.g., "Hindi news about Union Budget, GST")
+   - **LLM Cleanup** — Toggle GPT-4o-mini post-correction on/off
 4. Click **Transcribe**
-5. Watch real-time progress — the pipeline shows each stage (subtitle check, download, audio extraction, transcription, LLM cleanup, mind-map)
-6. View the result in **Paragraph** mode (default, clean readable text) or toggle to **Timestamps** mode (click any segment to jump in the video)
-7. Switch to the **Mind Map** tab for a visual topic summary
+5. Watch real-time progress — the pipeline shows each stage (subtitle check, download, audio extraction, transcription, LLM cleanup)
+6. View the result in **Paragraph** mode (default) or toggle to **Timestamps** mode (click any segment to jump in the video)
 
 ## Makefile Commands
 
@@ -139,6 +133,23 @@ To change the model, set `OPENAI_TRANSCRIPTION_MODEL` in your `.env` file or in 
 | `make purge-data` | Remove downloaded videos/audio and Docker volume |
 | `make clean` | Full cleanup — stop containers, remove volumes and images |
 
+## Pre-commit Hook
+
+A git pre-commit hook is set up that runs automatically on every commit:
+
+1. **Secret detection** — Scans staged files for leaked API keys (OpenAI `sk-*`, GitHub `ghp_*`, HuggingFace `hf_*`, Google `AIza*`, private keys). Blocks the commit if a secret is found.
+2. **Python formatting** — Runs `ruff format` on staged `.py` files (4-space indent, double quotes, 120-char line length — matches PyCharm defaults).
+3. **Python linting** — Runs `ruff check --fix` to catch unused imports, unsorted imports, and common errors. Auto-fixes are re-staged.
+
+To manually run the same checks:
+
+```bash
+uv run ruff format backend/       # format
+uv run ruff check --fix backend/  # lint + auto-fix
+```
+
+Ruff configuration lives in `pyproject.toml` under `[tool.ruff]`.
+
 ## API Endpoints
 
 | Method | Endpoint | Description |
@@ -147,9 +158,8 @@ To change the model, set `OPENAI_TRANSCRIPTION_MODEL` in your `.env` file or in 
 | `POST` | `/api/jobs/` | Create a transcription job |
 | `GET` | `/api/jobs/{id}` | Get job status and results |
 | `GET` | `/api/jobs/{id}/stream` | SSE progress stream |
-| `GET` | `/api/jobs/` | List recent jobs |
 | `GET` | `/api/video/{id}` | Serve downloaded video file |
-| `DELETE` | `/api/jobs/{id}` | Delete a job |
+| `GET` | `/api/video/{id}/mp3` | Download audio as MP3 |
 
 ### Create Job Request
 
@@ -161,8 +171,8 @@ To change the model, set `OPENAI_TRANSCRIPTION_MODEL` in your `.env` file or in 
   "start_time": null,
   "end_time": null,
   "split_duration": null,
-  "prompt": "Hindi discussion about technology and startups",
-  "context_hint": "Tech podcast"
+  "context": "Hindi discussion about technology and startups",
+  "llm_cleanup": true
 }
 ```
 
@@ -171,11 +181,9 @@ To change the model, set `OPENAI_TRANSCRIPTION_MODEL` in your `.env` file or in 
 ### Backend
 
 ```bash
-cd backend
-uv venv .venv && source .venv/bin/activate
 uv pip install -r pyproject.toml
 # Requires ffmpeg installed locally
-uvicorn main:app --reload --port 8000
+make dev
 ```
 
 ### Frontend
@@ -197,9 +205,10 @@ python main.py
 
 ## Tech Stack
 
-- **Frontend**: React 18, Vite, Mermaid.js
-- **Backend**: FastAPI, SQLAlchemy (async), aiosqlite, yt-dlp, ffmpeg
-- **ASR**: OpenAI gpt-4o-mini-transcribe (default) / faster-whisper (Docker) / HuggingFace Inference API
-- **LLM**: GPT-4o-mini for transcription post-correction
+- **Frontend**: React 18, Vite
+- **Backend**: FastAPI, SQLAlchemy (async), aiosqlite, yt-dlp, ffmpeg, loguru
+- **ASR**: OpenAI gpt-4o-mini-transcribe (default) / faster-whisper (Docker)
+- **LLM**: GPT-4o-mini for transcription post-correction (optional)
+- **Linting**: Ruff (format + lint), pre-commit hook
 - **Package Management**: uv (Python), npm (Node.js)
 - **Infra**: Docker Compose, SSE (Server-Sent Events), SQLite

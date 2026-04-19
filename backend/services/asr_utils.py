@@ -1,6 +1,7 @@
 """Shared utilities for ASR providers."""
+
 from pathlib import Path
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
 
 
 async def transcribe_chunked(
@@ -22,17 +23,19 @@ async def transcribe_chunked(
     for i, chunk_path in enumerate(audio_chunks):
         pct = (i / len(audio_chunks)) * 100
         if on_progress:
-            await on_progress(pct, f"Transcribing chunk {i+1}/{len(audio_chunks)} via {provider_label}...")
+            await on_progress(pct, f"Transcribing chunk {i + 1}/{len(audio_chunks)} via {provider_label}...")
 
         result = await transcribe_fn(chunk_path, language=language, **transcribe_kwargs)
         all_text.append(result.get("text", ""))
 
         for seg in result.get("segments", []):
-            all_segments.append({
-                "start": seg["start"] + time_offset,
-                "end": seg["end"] + time_offset,
-                "text": seg["text"],
-            })
+            all_segments.append(
+                {
+                    "start": seg["start"] + time_offset,
+                    "end": seg["end"] + time_offset,
+                    "text": seg["text"],
+                }
+            )
 
         if result.get("segments"):
             time_offset += result["segments"][-1]["end"]

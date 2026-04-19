@@ -1,9 +1,9 @@
 """ASR client for the Docker-hosted faster-whisper service."""
+
 from pathlib import Path
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
 
 import httpx
-from loguru import logger
 
 from backend.config import ASR_DOCKER_URL
 from backend.services.asr_utils import transcribe_chunked
@@ -52,6 +52,9 @@ async def transcribe_audio_chunked(
 ) -> dict:
     """Transcribe multiple audio chunks and merge results."""
     return await transcribe_chunked(
-        transcribe_audio, audio_chunks, "faster-whisper",
-        language=language, on_progress=on_progress,
+        transcribe_audio,
+        audio_chunks,
+        "faster-whisper",
+        language=language,
+        on_progress=on_progress,
     )

@@ -1,11 +1,9 @@
 """Routes for serving video and audio files."""
-import os
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
-from backend.config import VIDEOS_DIR, AUDIO_DIR
+from backend.config import AUDIO_DIR, VIDEOS_DIR
 from backend.services.video_service import convert_to_mp3
 
 router = APIRouter(prefix="/api/video", tags=["video"])

@@ -1,7 +1,8 @@
-from sqlalchemy import inspect, text
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlalchemy.orm import DeclarativeBase
 from loguru import logger
+from sqlalchemy import inspect, text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase
+
 from backend.config import DATABASE_URL
 
 engine = create_async_engine(DATABASE_URL, echo=False)

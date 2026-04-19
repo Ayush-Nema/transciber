@@ -1,6 +1,7 @@
 """LLM post-correction of transcription using GPT-4o-mini."""
+
 import re
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
 
 import httpx
 from loguru import logger
@@ -64,7 +65,9 @@ async def postprocess_transcription(
 
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
         response = await client.post(
-            OPENAI_CHAT_URL, json=payload, headers=openai_headers(),
+            OPENAI_CHAT_URL,
+            json=payload,
+            headers=openai_headers(),
         )
 
     if response.status_code != 200:
@@ -107,16 +110,16 @@ async def postprocess_segments(
     corrected_segments = []
 
     for batch_start in range(0, len(segments), BATCH_SIZE):
-        batch = segments[batch_start:batch_start + BATCH_SIZE]
+        batch = segments[batch_start : batch_start + BATCH_SIZE]
         pct = (batch_start / len(segments)) * 100
 
         if on_progress:
-            await on_progress(pct, f"Cleaning segments {batch_start+1}-{batch_start+len(batch)}...")
+            await on_progress(pct, f"Cleaning segments {batch_start + 1}-{batch_start + len(batch)}...")
 
         # Build numbered text for the batch
         numbered_lines = []
         for i, seg in enumerate(batch):
-            numbered_lines.append(f"{i+1}. {seg['text']}")
+            numbered_lines.append(f"{i + 1}. {seg['text']}")
         batch_text = "\n".join(numbered_lines)
 
         user_msg = (
@@ -139,7 +142,9 @@ async def postprocess_segments(
         try:
             async with httpx.AsyncClient(timeout=TIMEOUT) as client:
                 response = await client.post(
-                    OPENAI_CHAT_URL, json=payload, headers=openai_headers(),
+                    OPENAI_CHAT_URL,
+                    json=payload,
+                    headers=openai_headers(),
                 )
 
             if response.status_code == 200:
@@ -153,7 +158,7 @@ async def postprocess_segments(
                     if not line:
                         continue
                     # Strip leading number + dot/parenthesis
-                    cleaned = re.sub(r'^\d+[\.\)]\s*', '', line)
+                    cleaned = re.sub(r"^\d+[\.\)]\s*", "", line)
                     if cleaned:
                         corrected_lines.append(cleaned)
 

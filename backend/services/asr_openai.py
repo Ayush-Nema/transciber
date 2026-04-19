@@ -1,7 +1,7 @@
 """ASR client using OpenAI Transcription API."""
-import asyncio
+
 from pathlib import Path
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
 
 import httpx
 from loguru import logger
@@ -86,11 +86,13 @@ async def transcribe_audio(
     # Parse segments (only available with whisper-1 verbose_json)
     segments = []
     for seg in result.get("segments", []):
-        segments.append({
-            "start": round(seg["start"], 2),
-            "end": round(seg["end"], 2),
-            "text": seg["text"].strip(),
-        })
+        segments.append(
+            {
+                "start": round(seg["start"], 2),
+                "end": round(seg["end"], 2),
+                "text": seg["text"].strip(),
+            }
+        )
 
     detected_lang = result.get("language", language)
     full_text = result.get("text", "")
@@ -99,10 +101,7 @@ async def transcribe_audio(
         label = "Whisper" if is_whisper else model
         await on_progress(100, f"Transcription complete (OpenAI {label}).")
 
-    logger.info(
-        f"OpenAI transcription done (model={model}): "
-        f"{len(segments)} segments, language={detected_lang}"
-    )
+    logger.info(f"OpenAI transcription done (model={model}): {len(segments)} segments, language={detected_lang}")
 
     return {
         "text": full_text,
@@ -120,6 +119,10 @@ async def transcribe_audio_chunked(
     """Transcribe multiple audio chunks via OpenAI and merge results."""
     kwargs = {"prompt": prompt} if prompt else {}
     return await transcribe_chunked(
-        transcribe_audio, audio_chunks, "OpenAI",
-        language=language, on_progress=on_progress, **kwargs,
+        transcribe_audio,
+        audio_chunks,
+        "OpenAI",
+        language=language,
+        on_progress=on_progress,
+        **kwargs,
     )

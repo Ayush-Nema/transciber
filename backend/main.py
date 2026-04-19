@@ -1,23 +1,25 @@
 """Video Transcriber Backend - FastAPI application."""
+
 import logging
 import sys
 from contextlib import asynccontextmanager
 
-from loguru import logger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from loguru import logger
 
+from backend.config import LOG_DIR
 from backend.db.database import init_db
 from backend.routers import jobs, video
-from backend.config import VIDEOS_DIR, LOG_DIR
-
 
 # ── Loguru configuration ──
 logger.remove()
 logger.add(
     sys.stderr,
-    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> [<level>{level}</level>] <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+    format=(
+        "<green>{time:YYYY-MM-DD HH:mm:ss}</green> [<level>{level}</level>] "
+        "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
+    ),
     level="DEBUG",
     colorize=True,
 )
