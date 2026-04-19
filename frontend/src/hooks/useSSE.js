@@ -23,7 +23,7 @@ export function useSSE(jobId) {
 
     const eventTypes = [
       'downloading', 'extracting_audio', 'transcribing',
-      'generating_mindmap', 'completed', 'error', 'progress'
+      'completed', 'error', 'progress'
     ];
 
     eventTypes.forEach(type => {

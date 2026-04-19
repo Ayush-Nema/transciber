@@ -377,19 +377,6 @@ body {
   border-left: 3px solid var(--accent);
 }
 
-/* ── Mind Map ── */
-.mindmap-container {
-  min-height: 300px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: auto;
-}
-
-.mindmap-container svg {
-  max-width: 100%;
-}
-
 /* ── Tabs ── */
 .tabs {
   display: flex;

@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.job import TranscriptionJob, JobStatus, ASRProvider, Platform
 from services.video_service import download_video, extract_audio, preprocess_audio, split_audio, probe_duration
 from services.subtitle_extractor import extract_subtitles
-from services.mindmap_service import generate_mindmap_from_segments, generate_mindmap_from_text
 from services.sse_manager import sse_manager
 from services import asr_openai, asr_docker
 from services.llm_postprocess import postprocess_transcription, postprocess_segments
@@ -217,43 +216,16 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
         await _update_job(db, job,
                           transcription=transcription_text,
                           segments=segments,
-                          progress=85.0,
+                          progress=95.0,
                           progress_message="Transcription complete.")
-        await _publish_progress(job_id, 85, "Transcription complete.", "transcribing")
+        await _publish_progress(job_id, 95, "Transcription complete.", "transcribing")
 
-        # ── Step 4: Generate Mind-Map (optional) ──
-        mindmap = None
-        if job.generate_mindmap:
-            await _update_job(db, job, status=JobStatus.GENERATING_MINDMAP,
-                              progress_message="Generating mind-map...")
-            await _publish_progress(job_id, 85, "Generating mind-map...", "generating_mindmap")
-
-            title = job.title or "Transcription"
-            mm_context = job.prompt or ""
-
-            async def on_mindmap_progress(pct, msg):
-                scaled = 85 + pct * 0.13
-                await _update_job(db, job, progress=scaled, progress_message=msg)
-                await _publish_progress(job_id, scaled, msg, "generating_mindmap")
-
-            if segments:
-                mindmap = await generate_mindmap_from_segments(
-                    segments, title, language=job.language,
-                    context_hint=mm_context, on_progress=on_mindmap_progress,
-                )
-            else:
-                mindmap = await generate_mindmap_from_text(
-                    transcription_text, title, language=job.language,
-                    context_hint=mm_context, on_progress=on_mindmap_progress,
-                )
-
-        # ── Step 5: Await background download if still running ──
+        # ── Step 4: Await background download if still running ──
         if download_task:
             await _publish_progress(job_id, 98, "Waiting for video download...", "progress")
             video_path = await download_task
 
         await _update_job(db, job,
-                          mindmap_mermaid=mindmap,
                           status=JobStatus.COMPLETED,
                           progress=100.0,
                           progress_message="All done!")
@@ -263,7 +235,6 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
             "job_id": job_id,
             "transcription": transcription_text,
             "segments": segments,
-            "mindmap": mindmap,
         })
 
     except Exception as e:

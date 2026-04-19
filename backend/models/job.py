@@ -11,7 +11,6 @@ class JobStatus(str, enum.Enum):
     DOWNLOADING = "downloading"
     EXTRACTING_AUDIO = "extracting_audio"
     TRANSCRIBING = "transcribing"
-    GENERATING_MINDMAP = "generating_mindmap"
     COMPLETED = "completed"
     FAILED = "failed"
 
@@ -54,12 +53,10 @@ class TranscriptionJob(Base):
 
     # Pipeline options
     llm_cleanup: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
-    generate_mindmap: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
 
     # Results
     transcription: Mapped[str | None] = mapped_column(Text, nullable=True)
-    segments: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # timestamped segments
-    mindmap_mermaid: Mapped[str | None] = mapped_column(Text, nullable=True)
+    segments: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(

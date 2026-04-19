@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import VideoPlayer from './components/VideoPlayer';
 import ProgressPanel from './components/ProgressPanel';
 import TranscriptionPanel from './components/TranscriptionPanel';
-import MindMap from './components/MindMap';
 import RangeSelector from './components/RangeSelector';
 import { api } from './hooks/useApi';
 import { useSSE } from './hooks/useSSE';
@@ -18,14 +17,12 @@ export default function App() {
   const [splitDuration, setSplitDuration] = useState('');
   const [context, setContext] = useState('');
   const [llmCleanup, setLlmCleanup] = useState(true);
-  const [generateMindmap, setGenerateMindmap] = useState(true);
 
   const [currentJob, setCurrentJob] = useState(null);
   const [loading, setLoading] = useState(false);
   const [fetchingInfo, setFetchingInfo] = useState(false);
   const [error, setError] = useState(null);
 
-  const [activeTab, setActiveTab] = useState('transcription'); // transcription | mindmap
   const [videoTime, setVideoTime] = useState(0);
 
   const videoRef = useRef(null);
@@ -52,13 +49,11 @@ export default function App() {
       if (type === 'downloading') updates.status = 'downloading';
       else if (type === 'extracting_audio') updates.status = 'extracting_audio';
       else if (type === 'transcribing') updates.status = 'transcribing';
-      else if (type === 'generating_mindmap') updates.status = 'generating_mindmap';
       else if (type === 'completed') {
         updates.status = 'completed';
         updates.progress = 100;
         if (data.transcription) updates.transcription = data.transcription;
         if (data.segments) updates.segments = data.segments;
-        if (data.mindmap) updates.mindmap_mermaid = data.mindmap;
       } else if (type === 'error') {
         updates.status = 'failed';
         updates.error_message = data.error;
@@ -107,7 +102,6 @@ export default function App() {
         split_duration: splitDuration ? parseInt(splitDuration) : null,
         context: context.trim() || null,
         llm_cleanup: llmCleanup,
-        generate_mindmap: generateMindmap,
       };
 
       const job = await api.createJob(jobData);
@@ -220,10 +214,6 @@ export default function App() {
             <input type="checkbox" checked={llmCleanup} onChange={(e) => setLlmCleanup(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
             LLM Cleanup
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', paddingBottom: 4 }}>
-            <input type="checkbox" checked={generateMindmap} onChange={(e) => setGenerateMindmap(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
-            Mind Map
-          </label>
         </div>
       </section>
 
@@ -277,34 +267,19 @@ export default function App() {
           </div>
         </div>
 
-        {/* Right: Transcription + Mind Map */}
+        {/* Right: Transcription */}
         <div className="card">
-          <div className="tabs">
-            <button
-              className={`tab ${activeTab === 'transcription' ? 'active' : ''}`}
-              onClick={() => setActiveTab('transcription')}
-            >
-              Transcription
-            </button>
-            <button
-              className={`tab ${activeTab === 'mindmap' ? 'active' : ''}`}
-              onClick={() => setActiveTab('mindmap')}
-            >
-              Mind Map
-            </button>
+          <div className="card-header">
+            <h2>Transcription</h2>
           </div>
           <div className="card-body">
-            {activeTab === 'transcription' ? (
-              <TranscriptionPanel
-                transcription={currentJob?.transcription}
-                segments={currentJob?.segments}
-                currentTime={videoTime}
-                onSeekTo={handleSeekTo}
-                jobId={currentJob?.id}
-              />
-            ) : (
-              <MindMap mermaidCode={currentJob?.mindmap_mermaid} />
-            )}
+            <TranscriptionPanel
+              transcription={currentJob?.transcription}
+              segments={currentJob?.segments}
+              currentTime={videoTime}
+              onSeekTo={handleSeekTo}
+              jobId={currentJob?.id}
+            />
           </div>
         </div>
       </div>

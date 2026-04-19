@@ -4,15 +4,13 @@ const STEPS = [
   { key: 'downloading', label: 'Download' },
   { key: 'extracting_audio', label: 'Extract Audio' },
   { key: 'transcribing', label: 'Transcribe' },
-  { key: 'generating_mindmap', label: 'Mind Map' },
 ];
 
 const STATUS_ORDER = {
   downloading: 0,
   extracting_audio: 1,
   transcribing: 2,
-  generating_mindmap: 3,
-  completed: 4,
+  completed: 3,
   failed: -1,
 };
 

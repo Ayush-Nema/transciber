@@ -26,7 +26,6 @@ class CreateJobRequest(BaseModel):
     split_duration: int | None = Field(default=None, ge=60, description="Split duration in seconds (min 60)")
     context: str | None = Field(default=None, max_length=1000, description="Context hint for ASR and LLM (e.g. topic, expected vocabulary)")
     llm_cleanup: bool = Field(default=True, description="Run LLM post-correction on transcription")
-    generate_mindmap: bool = Field(default=True, description="Generate mind-map from transcription")
 
 
 class JobResponse(BaseModel):
@@ -47,7 +46,6 @@ class JobResponse(BaseModel):
     split_duration: int | None = None
     transcription: str | None = None
     segments: list | None = None
-    mindmap_mermaid: str | None = None
     error_message: str | None = None
     created_at: str | None = None
 
@@ -106,7 +104,6 @@ async def create_job(req: CreateJobRequest, db: AsyncSession = Depends(get_db)):
         split_duration=req.split_duration,
         prompt=req.context,
         llm_cleanup=req.llm_cleanup,
-        generate_mindmap=req.generate_mindmap,
     )
 
     db.add(job)
@@ -179,7 +176,6 @@ def _job_to_response(job: TranscriptionJob) -> JobResponse:
         split_duration=job.split_duration,
         transcription=job.transcription,
         segments=job.segments if isinstance(job.segments, list) else None,
-        mindmap_mermaid=job.mindmap_mermaid,
         error_message=job.error_message,
         created_at=job.created_at.isoformat() if job.created_at else None,
     )
