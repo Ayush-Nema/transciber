@@ -10,7 +10,16 @@ from loguru import logger
 from backend.config import AUDIO_DIR, VIDEOS_DIR
 from backend.models.job import Platform
 
-INSTAGRAM_COOKIES_BROWSER = os.environ.get("INSTAGRAM_COOKIES_BROWSER", "")  # e.g. "chrome", "firefox"
+COOKIES_BROWSER = os.environ.get("COOKIES_BROWSER", "")  # e.g. "chrome", "firefox", "brave"
+COOKIES_FILE = os.environ.get("COOKIES_FILE", "")  # path to Netscape cookies.txt (for Docker)
+
+
+def _apply_cookies(opts: dict) -> None:
+    """Add cookie config to yt-dlp options."""
+    if COOKIES_BROWSER:
+        opts["cookiesfrombrowser"] = (COOKIES_BROWSER,)
+    elif COOKIES_FILE:
+        opts["cookiefile"] = COOKIES_FILE
 
 
 def _parse_loudnorm_stats(ffmpeg_stderr: str) -> dict | None:
@@ -52,9 +61,7 @@ async def fetch_video_info(url: str) -> dict:
         "no_warnings": True,
         "skip_download": True,
     }
-
-    if INSTAGRAM_COOKIES_BROWSER and "instagram.com" in url.lower():
-        ydl_opts["cookiesfrombrowser"] = (INSTAGRAM_COOKIES_BROWSER,)
+    _apply_cookies(ydl_opts)
 
     def _extract():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -108,9 +115,7 @@ async def download_video(
         "extractor_args": {"instagram": {"skip": ["dash"]}},
     }
 
-    # Use browser cookies for Instagram to get full content
-    if INSTAGRAM_COOKIES_BROWSER and "instagram.com" in url.lower():
-        ydl_opts["cookiesfrombrowser"] = (INSTAGRAM_COOKIES_BROWSER,)
+    _apply_cookies(ydl_opts)
 
     def _download():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:

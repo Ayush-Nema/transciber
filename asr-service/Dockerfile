@@ -1,29 +1,24 @@
-# ── Build stage: resolve deps with uv ──
+# ── Build stage: install deps with uv ──
 FROM python:3.11-slim AS builder
 
-# Install uv from official image
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-WORKDIR /build
+RUN uv venv /opt/venv
 
-# Copy project metadata only (cache-friendly layer)
+WORKDIR /build
 COPY pyproject.toml ./
 
-# Resolve lockfile and install deps into a virtual env
-RUN uv lock && \
-    uv sync --no-dev --no-install-project
+RUN VIRTUAL_ENV=/opt/venv uv pip install -r pyproject.toml
 
 # ── Runtime stage ──
 FROM python:3.11-slim
 
-# libgomp required by CTranslate2
 RUN apt-get update && \
     apt-get install -y --no-install-recommends libgomp1 && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy virtual env from builder
-COPY --from=builder /build/.venv /app/.venv
-ENV PATH="/app/.venv/bin:$PATH"
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
 COPY main.py .
@@ -33,11 +28,6 @@ ARG WHISPER_MODEL_SIZE=base
 ENV WHISPER_MODEL_SIZE=${WHISPER_MODEL_SIZE}
 ENV WHISPER_DEVICE=cpu
 ENV WHISPER_COMPUTE_TYPE=int8
-
-# HuggingFace token — needed to download models
-# Passed as build arg from docker-compose, also set at runtime
-ARG HF_TOKEN=""
-ENV HF_TOKEN=${HF_TOKEN}
 
 # Download model at build time so container starts fast
 RUN python -c "from faster_whisper import WhisperModel; WhisperModel('${WHISPER_MODEL_SIZE}', device='cpu', compute_type='int8')"

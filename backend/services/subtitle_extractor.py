@@ -14,6 +14,7 @@ import yt_dlp
 from loguru import logger
 
 from backend.config import DATA_DIR
+from backend.services.video_service import _apply_cookies
 
 SUBS_DIR = DATA_DIR / "subs"
 SUBS_DIR.mkdir(parents=True, exist_ok=True)
@@ -233,6 +234,7 @@ async def check_subtitles_available(url: str) -> dict | None:
         "no_warnings": True,
         "skip_download": True,
     }
+    _apply_cookies(ydl_opts)
 
     def _check():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -323,6 +325,7 @@ async def extract_subtitles(
         "subtitlesformat": "vtt",
         "outtmpl": str(SUBS_DIR / f"{job_id}"),
     }
+    _apply_cookies(ydl_opts)
 
     def _download_subs():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:

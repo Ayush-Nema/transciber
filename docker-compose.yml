@@ -36,14 +36,12 @@ services:
       context: ./asr-service
       args:
         WHISPER_MODEL_SIZE: base
-        HF_TOKEN: ${HF_TOKEN:-}
     ports:
       - "8001:8001"
     environment:
       - WHISPER_MODEL_SIZE=base
       - WHISPER_DEVICE=cpu
       - WHISPER_COMPUTE_TYPE=int8
-      - HF_TOKEN=${HF_TOKEN:-}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 30s

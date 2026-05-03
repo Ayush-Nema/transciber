@@ -1,17 +1,22 @@
 """Video Transcriber Backend - FastAPI application."""
 
+# ── Suppress third-party DEBUG logs BEFORE any imports ──
+# aiosqlite/sqlalchemy create loggers at import time, so this must be first.
 import logging
-import sys
-from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from loguru import logger
+logging.disable(logging.DEBUG)
 
-from backend.config import LOG_DIR
-from backend.db.database import init_db
-from backend.log_config import log_filter
-from backend.routers import jobs, video
+import sys  # noqa: E402
+from contextlib import asynccontextmanager  # noqa: E402
+
+from fastapi import FastAPI  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from loguru import logger  # noqa: E402
+
+from backend.config import LOG_DIR  # noqa: E402
+from backend.db.database import init_db  # noqa: E402
+from backend.log_config import log_filter  # noqa: E402
+from backend.routers import jobs, video  # noqa: E402
 
 # ── Loguru configuration ──
 # Per-module log levels are configured in backend/log_config.py
@@ -39,12 +44,10 @@ logger.add(
 # ── Intercept stdlib logging → loguru ──
 class InterceptHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
-        # Get corresponding Loguru level
         try:
             level = logger.level(record.levelname).name
         except ValueError:
             level = record.levelno
-        # Find caller from where originated the logged message
         frame, depth = logging.currentframe(), 2
         while frame and frame.f_code.co_filename == logging.__file__:
             frame = frame.f_back
@@ -52,7 +55,10 @@ class InterceptHandler(logging.Handler):
         logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
 
 
-logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+# Re-enable logging at INFO+ and route through loguru
+logging.disable(logging.NOTSET)
+logging.root.handlers = [InterceptHandler()]
+logging.root.setLevel(logging.INFO)
 
 
 @asynccontextmanager

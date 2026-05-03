@@ -23,21 +23,24 @@ async def transcribe_audio(
     if on_progress:
         await on_progress(0, "Sending audio to ASR service (faster-whisper)...")
 
-    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-        with open(audio_path, "rb") as f:
-            files = {"file": (audio_path.name, f, "audio/wav")}
-            data = {"language": language}
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            with open(audio_path, "rb") as f:
+                files = {"file": (audio_path.name, f, "audio/wav")}
+                data = {"language": language}
 
-            response = await client.post(
-                f"{ASR_DOCKER_URL}/transcribe",
-                files=files,
-                data=data,
-            )
+                response = await client.post(
+                    f"{ASR_DOCKER_URL}/transcribe",
+                    files=files,
+                    data=data,
+                )
+    except httpx.ConnectError:
+        raise RuntimeError(f"Cannot connect to ASR service at {ASR_DOCKER_URL}. Start it with: make up-asr")
 
-        if response.status_code != 200:
-            raise RuntimeError(f"ASR service error ({response.status_code}): {response.text}")
+    if response.status_code != 200:
+        raise RuntimeError(f"ASR service error ({response.status_code}): {response.text}")
 
-        result = response.json()
+    result = response.json()
 
     if on_progress:
         await on_progress(100, "Transcription complete (faster-whisper).")
