@@ -24,8 +24,8 @@ services:
       - OPENAI_TRANSCRIPTION_MODEL=${OPENAI_TRANSCRIPTION_MODEL:-gpt-4o-mini-transcribe}
       - ASR_DOCKER_URL=http://asr-service:8001
     volumes:
-      - ./backend:/app             # Hot reload
-      - backend-data:/app/data     # Persistent storage for videos/audio/db
+      - ./backend:/app/backend         # Hot reload
+      - backend-data:/app/backend/data # Persistent storage for videos/audio/db
 
   # ── ASR Microservice (faster-whisper) — optional, for local/offline mode ──
   # Start with: docker compose --profile local-asr up

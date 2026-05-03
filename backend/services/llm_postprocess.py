@@ -13,15 +13,14 @@ TIMEOUT = httpx.Timeout(timeout=120.0, connect=30.0)
 
 CORRECTION_SYSTEM_PROMPT = """\
 You are a transcription post-processor. Your job is to clean up and correct \
-raw speech-to-text output. The transcription is primarily in Hindi (Devanagari) \
-but may contain code-switched Hindi-English (Hinglish) segments.
+raw speech-to-text output while preserving the original language exactly.
 
 Rules:
 1. Fix obvious transcription errors, misheard words, and garbled text.
-2. Correct Hindi spellings and fix broken Devanagari sequences.
-3. For code-switched Hindi-English, ensure English words are spelled correctly \
-   while keeping the natural mixed-language flow.
-4. Add proper punctuation: full stops (।), commas, and question marks.
+2. Fix spelling errors in whatever language the text is in.
+3. For code-switched or multilingual text, ensure each language's words are \
+   spelled correctly while keeping the natural mixed-language flow.
+4. Add proper punctuation appropriate to the language.
 5. Fix sentence boundaries — split run-on text into natural sentences.
 6. Do NOT translate — keep the original language as-is.
 7. Do NOT add, remove, or rephrase content — only correct errors.
@@ -31,7 +30,7 @@ Rules:
 
 async def postprocess_transcription(
     raw_text: str,
-    language: str = "hi",
+    language: str = "auto",
     context_hint: str = "",
     on_progress: Callable[[float, str], Awaitable[None]] | None = None,
 ) -> str:
@@ -91,7 +90,7 @@ async def postprocess_transcription(
 
 async def postprocess_segments(
     segments: list[dict],
-    language: str = "hi",
+    language: str = "auto",
     context_hint: str = "",
     on_progress: Callable[[float, str], Awaitable[None]] | None = None,
 ) -> list[dict]:

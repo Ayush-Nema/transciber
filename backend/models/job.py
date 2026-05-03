@@ -49,7 +49,7 @@ class TranscriptionJob(Base):
     # Transcription settings
     start_time: Mapped[float | None] = mapped_column(Float, nullable=True)
     end_time: Mapped[float | None] = mapped_column(Float, nullable=True)
-    language: Mapped[str] = mapped_column(String(10), default="hi")
+    language: Mapped[str] = mapped_column(String(10), default="auto")
     split_duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
     prompt: Mapped[str | None] = mapped_column(Text, nullable=True)  # Context for Whisper + LLM
 

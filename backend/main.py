@@ -10,9 +10,11 @@ from loguru import logger
 
 from backend.config import LOG_DIR
 from backend.db.database import init_db
+from backend.log_config import log_filter
 from backend.routers import jobs, video
 
 # ── Loguru configuration ──
+# Per-module log levels are configured in backend/log_config.py
 logger.remove()
 logger.add(
     sys.stderr,
@@ -21,6 +23,7 @@ logger.add(
         "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
     ),
     level="DEBUG",
+    filter=log_filter,
     colorize=True,
 )
 logger.add(

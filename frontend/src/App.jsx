@@ -11,7 +11,7 @@ export default function App() {
   const [url, setUrl] = useState('');
   const [videoInfo, setVideoInfo] = useState(null);
   const [asrProvider, setAsrProvider] = useState('openai');
-  const [language, setLanguage] = useState('hi');
+  const [language, setLanguage] = useState('auto');
   const [startTime, setStartTime] = useState(null);
   const [endTime, setEndTime] = useState(null);
   const [splitDuration, setSplitDuration] = useState('');
@@ -170,9 +170,9 @@ export default function App() {
           <div className="option-group">
             <label>Language</label>
             <select value={language} onChange={(e) => setLanguage(e.target.value)}>
-              <option value="hi">Hindi</option>
-              <option value="en">English</option>
               <option value="auto">Auto-detect</option>
+              <option value="en">English</option>
+              <option value="hi">Hindi</option>
               <option value="mr">Marathi</option>
               <option value="ta">Tamil</option>
               <option value="te">Telugu</option>

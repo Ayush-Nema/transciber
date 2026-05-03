@@ -23,10 +23,10 @@ COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
-COPY backend/ .
+COPY backend/ backend/
 
-RUN mkdir -p data/videos data/audio data/subs
+RUN mkdir -p backend/data/videos backend/data/audio backend/data/subs logs
 
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 class CreateJobRequest(BaseModel):
     url: str
     asr_provider: str = Field(default="openai", pattern="^(openai|docker)$")
-    language: str = Field(default="hi", max_length=10)
+    language: str = Field(default="auto", max_length=10)
     start_time: float | None = Field(default=None, ge=0)
     end_time: float | None = Field(default=None, ge=0)
     split_duration: int | None = Field(default=None, ge=60, description="Split duration in seconds (min 60)")

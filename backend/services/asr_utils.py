@@ -8,7 +8,7 @@ async def transcribe_chunked(
     transcribe_fn: Callable[..., Awaitable[dict]],
     audio_chunks: list[Path],
     provider_label: str,
-    language: str = "hi",
+    language: str = "auto",
     on_progress: Callable[[float, str], Awaitable[None]] | None = None,
     **transcribe_kwargs,
 ) -> dict:

@@ -13,7 +13,7 @@ TIMEOUT = httpx.Timeout(timeout=600.0, connect=30.0)
 
 async def transcribe_audio(
     audio_path: Path,
-    language: str = "hi",
+    language: str = "auto",
     on_progress: Callable[[float, str], Awaitable[None]] | None = None,
 ) -> dict:
     """
@@ -47,7 +47,7 @@ async def transcribe_audio(
 
 async def transcribe_audio_chunked(
     audio_chunks: list[Path],
-    language: str = "hi",
+    language: str = "auto",
     on_progress: Callable[[float, str], Awaitable[None]] | None = None,
 ) -> dict:
     """Transcribe multiple audio chunks and merge results."""

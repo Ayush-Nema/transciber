@@ -16,7 +16,7 @@ MAX_FILE_SIZE_MB = 25  # OpenAI limit
 
 async def transcribe_audio(
     audio_path: Path,
-    language: str = "hi",
+    language: str = "auto",
     prompt: str | None = None,
     on_progress: Callable[[float, str], Awaitable[None]] | None = None,
 ) -> dict:
@@ -112,7 +112,7 @@ async def transcribe_audio(
 
 async def transcribe_audio_chunked(
     audio_chunks: list[Path],
-    language: str = "hi",
+    language: str = "auto",
     prompt: str | None = None,
     on_progress: Callable[[float, str], Awaitable[None]] | None = None,
 ) -> dict:

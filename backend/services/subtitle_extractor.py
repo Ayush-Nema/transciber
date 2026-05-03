@@ -251,7 +251,7 @@ async def check_subtitles_available(url: str) -> dict | None:
 async def extract_subtitles(
     url: str,
     job_id: str,
-    language: str = "hi",
+    language: str = "auto",
     on_progress: Callable[[float, str], Awaitable[None]] | None = None,
 ) -> dict | None:
     """
