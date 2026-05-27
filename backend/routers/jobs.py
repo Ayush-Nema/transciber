@@ -1,6 +1,7 @@
 """API routes for transcription jobs."""
 
 import asyncio
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -10,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.db.database import async_session, get_db
 from backend.models.job import ASRProvider, JobStatus, TranscriptionJob
 from backend.services.sse_manager import sse_manager
-from backend.services.transcription_orchestrator import run_transcription_pipeline
+from backend.services.transcription_orchestrator import run_download_only_pipeline, run_transcription_pipeline
 from backend.services.video_service import detect_platform, fetch_video_info
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
@@ -28,6 +29,13 @@ class CreateJobRequest(BaseModel):
     split_duration: int | None = Field(default=None, ge=60, description="Split duration in seconds (min 60)")
     context: str | None = Field(default=None, max_length=1000, description="Context hint for ASR and LLM")
     llm_cleanup: bool = Field(default=True, description="Run LLM post-correction on transcription")
+    preview_job_id: str | None = Field(
+        default=None, description="If provided, reuse the video already downloaded by this preview job."
+    )
+
+
+class DownloadJobRequest(BaseModel):
+    url: str
 
 
 class JobResponse(BaseModel):
@@ -88,20 +96,31 @@ async def create_job(req: CreateJobRequest, db: AsyncSession = Depends(get_db)):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # Fetch video info first
-    try:
-        info = await fetch_video_info(req.url)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Could not fetch video info: {e}")
+    # Prefer metadata + downloaded file from a preview job (Fetch Info) to avoid
+    # re-running yt-dlp and re-downloading. Falls back to a fresh fetch otherwise.
+    preview = await db.get(TranscriptionJob, req.preview_job_id) if req.preview_job_id else None
+    reused_video_path = (
+        preview.video_path if preview and preview.video_path and Path(preview.video_path).exists() else None
+    )
+
+    if preview and preview.title:
+        title, duration, thumbnail = preview.title, preview.duration, preview.thumbnail_url
+    else:
+        try:
+            info = await fetch_video_info(req.url)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Could not fetch video info: {e}")
+        title, duration, thumbnail = info["title"], info["duration"], info["thumbnail"]
 
     job = TranscriptionJob(
         url=req.url,
         platform=platform,
         asr_provider=ASRProvider(req.asr_provider),
         language=req.language,
-        title=info["title"],
-        duration=info["duration"],
-        thumbnail_url=info["thumbnail"],
+        title=title,
+        duration=duration,
+        thumbnail_url=thumbnail,
+        video_path=reused_video_path,
         start_time=req.start_time,
         end_time=req.end_time,
         split_duration=req.split_duration,
@@ -120,6 +139,45 @@ async def create_job(req: CreateJobRequest, db: AsyncSession = Depends(get_db)):
             await run_transcription_pipeline(session, result)
 
     asyncio.create_task(_run_pipeline())
+
+    return _job_to_response(job)
+
+
+@router.post("/download", response_model=JobResponse)
+async def create_download_job(req: DownloadJobRequest, db: AsyncSession = Depends(get_db)):
+    """Create a job that only downloads the video (no transcription).
+
+    Used by the "Fetch Info" flow so the video player and Download Video/MP3
+    buttons can light up before the user commits to transcription.
+    """
+    try:
+        platform = detect_platform(req.url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        info = await fetch_video_info(req.url)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not fetch video info: {e}")
+
+    job = TranscriptionJob(
+        url=req.url,
+        platform=platform,
+        title=info["title"],
+        duration=info["duration"],
+        thumbnail_url=info["thumbnail"],
+    )
+
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    async def _run_download():
+        async with async_session() as session:
+            result = await session.get(TranscriptionJob, job.id)
+            await run_download_only_pipeline(session, result)
+
+    asyncio.create_task(_run_download())
 
     return _job_to_response(job)
 

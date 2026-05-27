@@ -10,8 +10,12 @@ router = APIRouter(prefix="/api/video", tags=["video"])
 
 
 @router.get("/{job_id}")
-async def serve_video(job_id: str, request: Request):
-    """Serve a downloaded video file with range request support."""
+async def serve_video(job_id: str, request: Request, download: bool = False):
+    """Serve a downloaded video file with range request support.
+
+    Pass ``?download=1`` to receive a Content-Disposition attachment header
+    so browsers save the file instead of streaming it inline.
+    """
     # Find video file
     video_files = list(VIDEOS_DIR.glob(f"{job_id}.*"))
     if not video_files:
@@ -21,9 +25,9 @@ async def serve_video(job_id: str, request: Request):
     file_size = video_path.stat().st_size
     content_type = _get_content_type(video_path.suffix)
 
-    # Handle range requests for seeking
+    # Handle range requests for seeking (only for inline playback)
     range_header = request.headers.get("range")
-    if range_header:
+    if range_header and not download:
         start, end = _parse_range(range_header, file_size)
         chunk_size = end - start + 1
 
@@ -50,10 +54,16 @@ async def serve_video(job_id: str, request: Request):
             },
         )
 
+    headers = {"Accept-Ranges": "bytes"}
+    filename = f"{job_id}{video_path.suffix}"
+    if download:
+        headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+
     return FileResponse(
         video_path,
         media_type=content_type,
-        headers={"Accept-Ranges": "bytes"},
+        filename=filename if download else None,
+        headers=headers,
     )
 
 

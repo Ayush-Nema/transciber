@@ -2,6 +2,7 @@
 
 import asyncio
 import traceback
+from pathlib import Path
 
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,6 +47,34 @@ async def _download_video_background(url, job_id, expected_duration, db, job):
     except Exception as e:
         logger.warning(f"Background video download failed for {job_id}: {e}")
         return None
+
+
+async def _download_with_progress(db, job, *, scale_to: float):
+    """Run download_video with SSE + DB progress, scaled into the overall pipeline.
+
+    ``scale_to`` is the share of overall progress this download represents
+    (e.g. 30.0 means download fills 0→30%; 100.0 fills 0→100%).
+    Sets ``job.video_path`` on success and returns the resolved Path.
+    """
+    job_id = job.id
+    await _update_job(db, job, status=JobStatus.DOWNLOADING, progress=0.0, progress_message="Starting download...")
+    await _publish_progress(job_id, 0, "Starting video download...", "downloading")
+
+    last_commit_pct = 0.0
+
+    async def on_download_progress(pct: float, msg: str):
+        nonlocal last_commit_pct
+        scaled = pct * scale_to / 100
+        # Throttle DB writes: commit on every 5% step or at endpoints. SSE always fires.
+        if pct - last_commit_pct >= 5.0 or pct >= 100.0 or pct == 0.0:
+            await _update_job(db, job, progress=scaled, progress_message=msg)
+            last_commit_pct = pct
+        await _publish_progress(job_id, scaled, msg, "downloading")
+
+    video_path = await download_video(job.url, job_id, expected_duration=job.duration, on_progress=on_download_progress)
+    await _update_job(db, job, video_path=str(video_path), progress=scale_to, progress_message="Download complete.")
+    await _publish_progress(job_id, scale_to, "Download complete.", "downloading")
+    return video_path
 
 
 async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
@@ -93,34 +122,21 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
                 )
 
         # ── Step 1: Download Video ──
-        # On subtitle path: download concurrently (non-blocking)
-        # On ASR path: download and wait (we need the audio)
+        # Subtitle path: download concurrently (non-blocking, audio not needed).
+        # ASR path: download and wait. Skip if a preview job already downloaded the file.
         download_task = None
         video_path = None
 
-        if subtitle_result:
-            # Fire-and-forget download for video player / MP3
+        if job.video_path and Path(job.video_path).exists():
+            video_path = Path(job.video_path)
+            await _update_job(db, job, progress=30.0, progress_message="Reusing previously downloaded video.")
+            await _publish_progress(job_id, 30, "Reusing downloaded video.", "downloading")
+            logger.info(f"Job {job_id}: skipping download, reusing {video_path}")
+        elif subtitle_result:
             download_task = asyncio.create_task(_download_video_background(job.url, job_id, job.duration, db, job))
             await _publish_progress(job_id, 30, "Downloading video in background...", "downloading")
         else:
-            await _update_job(
-                db, job, status=JobStatus.DOWNLOADING, progress=0.0, progress_message="Starting download..."
-            )
-            await _publish_progress(job_id, 0, "Starting video download...", "downloading")
-
-            async def on_download_progress(pct, msg):
-                scaled = pct * 0.3
-                await _update_job(db, job, progress=scaled, progress_message=msg)
-                await _publish_progress(job_id, scaled, msg, "downloading")
-
-            video_path = await download_video(
-                job.url,
-                job_id,
-                expected_duration=job.duration,
-                on_progress=on_download_progress,
-            )
-            await _update_job(db, job, video_path=str(video_path), progress=30.0, progress_message="Download complete.")
-            await _publish_progress(job_id, 30, "Download complete.", "downloading")
+            video_path = await _download_with_progress(db, job, scale_to=30.0)
 
         # ── Step 2: Extract Audio (skip if using subtitles) ──
         audio_path = None
@@ -266,3 +282,23 @@ async def run_transcription_pipeline(db: AsyncSession, job: TranscriptionJob):
                 "error": str(e),
             },
         )
+
+
+async def run_download_only_pipeline(db: AsyncSession, job: TranscriptionJob):
+    """Download the video for a job without running transcription.
+
+    Used by the "Fetch Info" flow so the player and download buttons can light
+    up before the user commits to transcription. The job's final state is
+    ``COMPLETED`` with ``transcription=None`` and ``video_path`` populated.
+    """
+    job_id = job.id
+    try:
+        video_path = await _download_with_progress(db, job, scale_to=100.0)
+        await _update_job(db, job, status=JobStatus.COMPLETED, progress=100.0, progress_message="Video ready.")
+        await sse_manager.publish(job_id, "completed", {"job_id": job_id, "video_path": str(video_path)})
+        logger.info(f"Download-only pipeline complete for job {job_id}")
+
+    except Exception as e:
+        logger.error(f"Download-only pipeline failed for job {job_id}: {traceback.format_exc()}")
+        await _update_job(db, job, status=JobStatus.FAILED, error_message=str(e), progress_message=f"Error: {str(e)}")
+        await sse_manager.publish(job_id, "error", {"job_id": job_id, "error": str(e)})

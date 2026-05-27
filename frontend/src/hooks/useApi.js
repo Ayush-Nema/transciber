@@ -18,19 +18,21 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  fetchVideoInfo: (url) => request('/jobs/video-info', {
-    method: 'POST',
-    body: JSON.stringify({ url }),
-  }),
-
   createJob: (data) => request('/jobs/', {
     method: 'POST',
     body: JSON.stringify(data),
   }),
 
+  createDownloadJob: (url) => request('/jobs/download', {
+    method: 'POST',
+    body: JSON.stringify({ url }),
+  }),
+
   getJob: (jobId) => request(`/jobs/${jobId}`),
 
   getVideoUrl: (jobId) => `${API_BASE}/video/${jobId}`,
+
+  getVideoDownloadUrl: (jobId) => `${API_BASE}/video/${jobId}?download=1`,
 
   getMp3Url: (jobId) => `${API_BASE}/video/${jobId}/mp3`,
 

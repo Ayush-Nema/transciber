@@ -3,13 +3,13 @@ import VideoPlayer from './components/VideoPlayer';
 import ProgressPanel from './components/ProgressPanel';
 import TranscriptionPanel from './components/TranscriptionPanel';
 import RangeSelector from './components/RangeSelector';
+import DownloadButtons from './components/DownloadButtons';
 import { api } from './hooks/useApi';
 import { useSSE } from './hooks/useSSE';
 
 export default function App() {
   // ── State ──
   const [url, setUrl] = useState('');
-  const [videoInfo, setVideoInfo] = useState(null);
   const [asrProvider, setAsrProvider] = useState('openai');
   const [language, setLanguage] = useState('auto');
   const [startTime, setStartTime] = useState(null);
@@ -71,13 +71,17 @@ export default function App() {
   }, [isDone]);
 
   // ── Fetch Video Info ──
+  // Creates a download-only job: the response carries metadata (title, duration,
+  // thumbnail) AND the job begins downloading so the player + download buttons
+  // light up before the user commits to transcription.
   const handleFetchInfo = async () => {
     if (!url.trim()) return;
     setError(null);
     setFetchingInfo(true);
+    resetSSE();
     try {
-      const info = await api.fetchVideoInfo(url);
-      setVideoInfo(info);
+      const downloadJob = await api.createDownloadJob(url.trim());
+      setCurrentJob(downloadJob);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -102,6 +106,8 @@ export default function App() {
         split_duration: splitDuration ? parseInt(splitDuration) : null,
         context: context.trim() || null,
         llm_cleanup: llmCleanup,
+        preview_job_id:
+          currentJob?.video_path && currentJob.url === url.trim() ? currentJob.id : null,
       };
 
       const job = await api.createJob(jobData);
@@ -140,7 +146,14 @@ export default function App() {
             className="url-input"
             placeholder="Paste YouTube, Instagram, or Facebook video URL..."
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setUrl(next);
+              // Drop any stale job tied to a different URL so we don't reuse the wrong video.
+              if (currentJob && currentJob.url !== next.trim()) {
+                setCurrentJob(null);
+              }
+            }}
             onKeyDown={(e) => e.key === 'Enter' && handleFetchInfo()}
           />
           <button className="btn btn-secondary" onClick={handleFetchInfo} disabled={fetchingInfo || !url.trim()}>
@@ -151,11 +164,10 @@ export default function App() {
           </button>
         </div>
 
-        {videoInfo && (
+        {currentJob?.title && (
           <div style={{ marginBottom: 16, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-            <strong style={{ color: 'var(--text-primary)' }}>{videoInfo.title}</strong>
-            {videoInfo.duration > 0 && ` \u2022 ${Math.floor(videoInfo.duration / 60)}m ${Math.floor(videoInfo.duration % 60)}s`}
-            {videoInfo.uploader && ` \u2022 ${videoInfo.uploader}`}
+            <strong style={{ color: 'var(--text-primary)' }}>{currentJob.title}</strong>
+            {currentJob.duration > 0 && ` \u2022 ${Math.floor(currentJob.duration / 60)}m ${Math.floor(currentJob.duration % 60)}s`}
           </div>
         )}
 
@@ -248,16 +260,21 @@ export default function App() {
                   {currentJob.platform}
                 </span>
               )}
+              <DownloadButtons
+                jobId={currentJob?.id}
+                title={currentJob?.title}
+                videoPath={currentJob?.video_path}
+              />
             </div>
             <div className="card-body">
               <VideoPlayer
                 ref={videoRef}
                 src={videoSrc}
-                thumbnail={videoInfo?.thumbnail || currentJob?.thumbnail_url}
+                thumbnail={currentJob?.thumbnail_url}
                 onTimeUpdate={setVideoTime}
               />
               <RangeSelector
-                duration={videoInfo?.duration || currentJob?.duration}
+                duration={currentJob?.duration}
                 startTime={startTime}
                 endTime={endTime}
                 onStartChange={setStartTime}
@@ -278,7 +295,6 @@ export default function App() {
               segments={currentJob?.segments}
               currentTime={videoTime}
               onSeekTo={handleSeekTo}
-              jobId={currentJob?.id}
             />
           </div>
         </div>

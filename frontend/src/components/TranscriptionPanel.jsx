@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { api } from '../hooks/useApi';
 import CopyButton from './CopyButton';
 
 function formatTime(seconds) {
@@ -8,46 +7,7 @@ function formatTime(seconds) {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
-function DownloadMp3Button({ jobId }) {
-  const [downloading, setDownloading] = useState(false);
-
-  const handleDownload = () => {
-    setDownloading(true);
-    // Use a hidden link to trigger browser download
-    const link = document.createElement('a');
-    link.href = api.getMp3Url(jobId);
-    link.download = `${jobId}.mp3`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    // Reset after a delay (conversion may take a moment)
-    setTimeout(() => setDownloading(false), 3000);
-  };
-
-  return (
-    <button
-      onClick={handleDownload}
-      disabled={downloading}
-      title="Download audio as MP3"
-      style={{
-        padding: '5px 12px',
-        background: 'var(--bg-input)',
-        border: '1px solid var(--border)',
-        borderRadius: 8,
-        color: 'var(--text-secondary)',
-        fontSize: '0.8rem',
-        cursor: downloading ? 'wait' : 'pointer',
-        transition: 'all 0.2s',
-        fontWeight: 500,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {downloading ? 'Preparing...' : 'Download MP3'}
-    </button>
-  );
-}
-
-export default function TranscriptionPanel({ transcription, segments, currentTime, onSeekTo, jobId }) {
+export default function TranscriptionPanel({ transcription, segments, currentTime, onSeekTo }) {
   const [viewMode, setViewMode] = useState('paragraph'); // 'paragraph' | 'timestamps'
   const [activeIdx, setActiveIdx] = useState(-1);
   const panelRef = useRef(null);
@@ -140,7 +100,6 @@ export default function TranscriptionPanel({ transcription, segments, currentTim
           </>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          {jobId && <DownloadMp3Button jobId={jobId} />}
           <CopyButton getText={getCopyText} />
         </div>
       </div>
